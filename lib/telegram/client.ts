@@ -106,7 +106,7 @@ export class TelegramBotClient {
     return await this.callApi<boolean>("setWebhook", {
       url,
       secret_token: secretToken,
-      allowed_updates: ["message", "callback_query", "pre_checkout_query"],
+      allowed_updates: ["message", "callback_query", "pre_checkout_query", "channel_post", "my_chat_member"],
     });
   }
 

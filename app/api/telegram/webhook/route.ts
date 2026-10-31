@@ -127,12 +127,42 @@ export async function POST(req: NextRequest) {
     is_persistent: true,
   };
 
-  // 3. Tratamento de Comandos e Mensagens de Texto
-  if (update.message?.text) {
-    const msg = update.message;
+  // 3. Tratamento de Adição a Grupos/Canais (my_chat_member)
+  if (update.my_chat_member) {
+    const member = update.my_chat_member;
+    const newStatus = member.new_chat_member?.status;
+    const chat = member.chat;
+    if (newStatus === "administrator" || newStatus === "member") {
+      try {
+        await telegram.sendMessage({
+          chat_id: chat.id,
+          text: `🤖 <b>Bot conectado com sucesso!</b>\n\n📢 <b>ID deste grupo/canal:</b> <code>${chat.id}</code>\n\n👉 Copie este ID e configure na variável <code>TELEGRAM_PUBLIC_CHANNEL_ID</code> na Vercel para ativar o canal de promoções!`,
+          parse_mode: "HTML",
+        });
+      } catch (e) {
+        console.error("[Webhook] Erro ao enviar mensagem de boas-vindas ao chat:", e);
+      }
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // 4. Tratamento de Comandos e Mensagens de Texto (Mensagens e Posts de Canal)
+  const incomingMsg = update.message || update.channel_post;
+  if (incomingMsg?.text) {
+    const msg = incomingMsg;
     const text = (msg.text || "").trim();
     const chatId = msg.chat.id;
     const user = msg.from;
+
+    // Comando rápido para capturar ID de qualquer grupo ou canal
+    if (text === "/id" || text === "/chatid" || text.startsWith("/id@") || text.startsWith("/chatid@")) {
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `ℹ️ <b>Informações deste Chat</b>\n\n• <b>ID:</b> <code>${chatId}</code>\n• <b>Tipo:</b> ${msg.chat.type}\n• <b>Título:</b> ${msg.chat.title || "Privado"}\n\n👉 Copie este ID e adicione na variável <b>TELEGRAM_PUBLIC_CHANNEL_ID</b> na Vercel!`,
+        parse_mode: "HTML",
+      });
+      return NextResponse.json({ ok: true });
+    }
 
     if (!user) return NextResponse.json({ ok: true });
 

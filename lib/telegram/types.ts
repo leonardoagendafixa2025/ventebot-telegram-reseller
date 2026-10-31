@@ -76,8 +76,16 @@ export interface TelegramCallbackQuery {
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  channel_post?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
   pre_checkout_query?: TelegramPreCheckoutQuery;
+  my_chat_member?: {
+    chat: TelegramChat;
+    from: TelegramUser;
+    date: number;
+    old_chat_member: { status: string; user: TelegramUser };
+    new_chat_member: { status: string; user: TelegramUser };
+  };
 }
 
 export interface TelegramLabeledPrice {

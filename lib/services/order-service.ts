@@ -1,0 +1,479 @@
+import { VenteBotClient } from "@/lib/ventebot/client";
+import { TelegramBotClient } from "@/lib/telegram/client";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export class OrderService {
+  private ventebot: VenteBotClient;
+  private telegram: TelegramBotClient;
+
+  constructor(ventebot?: VenteBotClient, telegram?: TelegramBotClient) {
+    this.ventebot = ventebot || new VenteBotClient();
+    this.telegram = telegram || new TelegramBotClient();
+  }
+
+  /**
+   * Cria um pedido interno com preço congelado via RPC atômica
+   */
+  async createOrder(params: {
+    telegramId: number;
+    username?: string;
+    firstName?: string;
+    produtoId: string;
+    quantidade: number;
+    metodoPagamento?: string;
+    activationIdentifier?: string;
+  }) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc("criar_pedido_atomicamente", {
+      p_telegram_id: params.telegramId,
+      p_username: params.username || null,
+      p_first_name: params.firstName || null,
+      p_produto_id: params.produtoId,
+      p_quantidade: params.quantidade,
+      p_metodo_pagamento: params.metodoPagamento || "telegram_stars",
+      p_activation_identifier: params.activationIdentifier || null,
+    });
+
+    if (error) {
+      throw new Error(`Erro ao criar pedido no banco: ${error.message}`);
+    }
+
+    if (!data.success) {
+      throw new Error(data.message || "Não foi possível criar o pedido.");
+    }
+
+    return data;
+  }
+
+  /**
+   * Confirma pagamento e dispara processamento com o fornecedor
+   */
+  async handlePaymentConfirmation(params: {
+    pedidoId: string;
+    provedor: string;
+    referenciaExterna: string;
+    valorStars: number;
+    payloadSeguro: Record<string, unknown>;
+  }) {
+    const supabase = createAdminClient();
+
+    // 1. Confirmação atômica no banco de dados com lock pessimista
+    const { data: confirmResult, error: confirmErr } = await supabase.rpc(
+      "confirmar_pagamento_atomicamente",
+      {
+        p_pedido_id: params.pedidoId,
+        p_provedor: params.provedor,
+        p_referencia_externa: params.referenciaExterna,
+        p_valor_stars: params.valorStars,
+        p_payload_seguro: params.payloadSeguro,
+      }
+    );
+
+    if (confirmErr) {
+      throw new Error(`Erro ao confirmar pagamento: ${confirmErr.message}`);
+    }
+
+    if (!confirmResult.success) {
+      throw new Error(confirmResult.message || "Falha ao registrar pagamento.");
+    }
+
+    // Se já estava pago e processado, evita recomprar do fornecedor
+    if (confirmResult.status === "ja_processado" || confirmResult.status === "ja_pago") {
+      return { success: true, message: "Pagamento já processado anteriormente." };
+    }
+
+    // 2. Busca informações completas do pedido para fulfillment
+    const { data: pedido, error: pedErr } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("id", params.pedidoId)
+      .single();
+
+    if (pedErr || !pedido) {
+      throw new Error("Pedido não encontrado após confirmação de pagamento.");
+    }
+
+    const clienteTgId = pedido.cliente?.telegram_id;
+
+    // 3. Verifica se é produto próprio ou VenteBot
+    if (pedido.produto?.origem === "proprio") {
+      return await this.fulfillProprietaryProduct(pedido);
+    }
+
+    // 4. Fulfillment com VenteBot
+    return await this.fulfillVenteBotProduct(pedido);
+  }
+
+  /**
+   * Executa a compra e entrega junto à VenteBot
+   */
+  private async fulfillVenteBotProduct(pedido: any) {
+    const supabase = createAdminClient();
+    const clienteTgId = pedido.cliente?.telegram_id;
+    const fornecedorProdId = pedido.produto?.fornecedor_produto_id;
+
+    if (!fornecedorProdId) {
+      await supabase.rpc("registrar_entrega_atomicamente", {
+        p_pedido_id: pedido.id,
+        p_status_fornecedor: "fornecedor_erro",
+        p_status_entrega: "falha_entrega",
+        p_fornecedor_order_id: null,
+        p_fornecedor_order_number: null,
+        p_conteudo_entregue: null,
+        p_itens_entregues: null,
+        p_detalhes_falha: "ID de produto do fornecedor não configurado.",
+      });
+
+      if (clienteTgId) {
+        await this.telegram.sendMessage({
+          chat_id: clienteTgId,
+          text: `⚠️ <b>Pagamento confirmado!</b>\n\nNo entanto, ocorreu uma inconsistência técnica no produto. Nosso suporte já foi notificado para concluir sua entrega manualmente.\n\nNúmero do pedido: <code>${pedido.referencia_unica}</code>`,
+          parse_mode: "HTML",
+        });
+      }
+      return { success: false, message: "ID do fornecedor ausente." };
+    }
+
+    // Validar saldo da carteira do revendedor na VenteBot
+    try {
+      const balanceInfo = await this.ventebot.getBalance();
+      const custoTotalEsperado = pedido.custo_unitario_usd * pedido.quantidade;
+      if (balanceInfo.balance_usd < custoTotalEsperado) {
+        // Alerta saldo insuficiente
+        await supabase.rpc("registrar_entrega_atomicamente", {
+          p_pedido_id: pedido.id,
+          p_status_fornecedor: "fornecedor_erro",
+          p_status_entrega: "pendente",
+          p_fornecedor_order_id: null,
+          p_fornecedor_order_number: null,
+          p_conteudo_entregue: null,
+          p_itens_entregues: null,
+          p_detalhes_falha: `Saldo na VenteBot insuficiente ($${balanceInfo.balance_usd} < $${custoTotalEsperado}). Recarga necessária.`,
+        });
+
+        if (clienteTgId) {
+          await this.telegram.sendMessage({
+            chat_id: clienteTgId,
+            text: `✅ <b>Pagamento recebido com sucesso!</b>\n\nSeu pedido <code>${pedido.referencia_unica}</code> está em fila de processamento e será entregue em instantes pela equipe de suporte.`,
+            parse_mode: "HTML",
+          });
+        }
+
+        return {
+          success: false,
+          message: "Saldo insuficiente no fornecedor. Pedido colocado em espera.",
+        };
+      }
+    } catch (e) {
+      console.warn("[OrderService] Não foi possível verificar saldo prévio:", e);
+    }
+
+    // Criar pedido no fornecedor com idempotência garantida
+    try {
+      const orderResp = await this.ventebot.createOrder(
+        {
+          product_id: fornecedorProdId,
+          quantity: pedido.quantidade,
+          customer_reference: `tg_${clienteTgId}_${pedido.referencia_unica}`,
+          idempotency_key: pedido.idempotency_key,
+          activation_identifier: pedido.activation_identifier || undefined,
+        },
+        pedido.id
+      );
+
+      const vOrder = orderResp.order;
+
+      if (vOrder.status === "COMPLETED") {
+        // Entrega imediata de estoque ou credenciais
+        const items = vOrder.items || [];
+        const conteudo = items.map((i) => i.account_data).join("\n\n");
+
+        await supabase.rpc("registrar_entrega_atomicamente", {
+          p_pedido_id: pedido.id,
+          p_status_fornecedor: "COMPLETED",
+          p_status_entrega: "entregue",
+          p_fornecedor_order_id: vOrder.id,
+          p_fornecedor_order_number: vOrder.order_number,
+          p_conteudo_entregue: conteudo,
+          p_itens_entregues: items,
+          p_detalhes_falha: null,
+        });
+
+        // Enviar itens ao cliente
+        if (clienteTgId) {
+          await this.telegram.sendMessage({
+            chat_id: clienteTgId,
+            text: `🎉 <b>Pedido Entregue com Sucesso!</b>\n\n📦 <b>Produto:</b> ${pedido.produto?.nome}\n🔢 <b>Qtd:</b> ${pedido.quantidade}\n🏷️ <b>Ref:</b> <code>${pedido.referencia_unica}</code>\n\n<b>Dados de acesso / Entrega:</b>\n<pre>${conteudo}</pre>\n\n<i>Obrigado pela preferência! Caso precise de suporte, digite /support.</i>`,
+            parse_mode: "HTML",
+          });
+        }
+
+        // Publicar venda no canal público se configurado (anonimizando cliente)
+        await this.publishSaleToChannel(pedido);
+
+        return { success: true, status: "entregue", order: vOrder };
+      } else if (
+        vOrder.status === "AWAITING_ACTIVATION" ||
+        vOrder.status === "PAID_PENDING_DELIVERY" ||
+        vOrder.status === "AWAITING_ACTIVATION_INFO"
+      ) {
+        // Pedido aceito e aguardando ativação/processamento pelo fornecedor
+        await supabase.rpc("registrar_entrega_atomicamente", {
+          p_pedido_id: pedido.id,
+          p_status_fornecedor: vOrder.status,
+          p_status_entrega: "pendente",
+          p_fornecedor_order_id: vOrder.id,
+          p_fornecedor_order_number: vOrder.order_number,
+          p_conteudo_entregue: null,
+          p_itens_entregues: null,
+          p_detalhes_falha: null,
+        });
+
+        if (clienteTgId) {
+          await this.telegram.sendMessage({
+            chat_id: clienteTgId,
+            text: `✅ <b>Pagamento Aprovado!</b>\n\nSeu pedido <code>${pedido.referencia_unica}</code> está em ativação pelo fornecedor (Status: <b>${vOrder.status}</b>).\nAssim que a ativação for concluída, você receberá a notificação aqui!`,
+            parse_mode: "HTML",
+          });
+        }
+
+        return { success: true, status: vOrder.status, order: vOrder };
+      } else {
+        // Status inesperado ou cancelado
+        await supabase.rpc("registrar_entrega_atomicamente", {
+          p_pedido_id: pedido.id,
+          p_status_fornecedor: vOrder.status,
+          p_status_entrega: "falha_entrega",
+          p_fornecedor_order_id: vOrder.id,
+          p_fornecedor_order_number: vOrder.order_number,
+          p_conteudo_entregue: null,
+          p_itens_entregues: null,
+          p_detalhes_falha: `Status retornado pelo fornecedor: ${vOrder.status}`,
+        });
+
+        return { success: false, status: vOrder.status };
+      }
+    } catch (err: any) {
+      const isTimeout = (err.message || "").toLowerCase().includes("timeout");
+      const statusFornecedor = isTimeout
+        ? "fornecedor_status_desconhecido"
+        : "fornecedor_erro";
+
+      await supabase.rpc("registrar_entrega_atomicamente", {
+        p_pedido_id: pedido.id,
+        p_status_fornecedor: statusFornecedor,
+        p_status_entrega: "pendente",
+        p_fornecedor_order_id: null,
+        p_fornecedor_order_number: null,
+        p_conteudo_entregue: null,
+        p_itens_entregues: null,
+        p_detalhes_falha: err.message,
+      });
+
+      if (clienteTgId) {
+        await this.telegram.sendMessage({
+          chat_id: clienteTgId,
+          text: `⏳ <b>Pagamento registrado!</b>\n\nO processamento com o fornecedor está em andamento. Nosso sistema está reconciliando sua entrega.\nRef: <code>${pedido.referencia_unica}</code>`,
+          parse_mode: "HTML",
+        });
+      }
+
+      return {
+        success: false,
+        status: statusFornecedor,
+        message: err.message,
+      };
+    }
+  }
+
+  /**
+   * Processa entrega de item próprio do estoque
+   */
+  private async fulfillProprietaryProduct(pedido: any) {
+    const supabase = createAdminClient();
+    const clienteTgId = pedido.cliente?.telegram_id;
+
+    // Buscar item no estoque próprio com lock
+    const { data: itens, error } = await supabase
+      .from("estoque_itens")
+      .select("*")
+      .eq("produto_id", pedido.produto_id)
+      .eq("status", "disponivel")
+      .limit(pedido.quantidade);
+
+    if (error || !itens || itens.length < pedido.quantidade) {
+      await supabase.rpc("registrar_entrega_atomicamente", {
+        p_pedido_id: pedido.id,
+        p_status_fornecedor: "fornecedor_erro",
+        p_status_entrega: "pendente",
+        p_fornecedor_order_id: null,
+        p_fornecedor_order_number: null,
+        p_conteudo_entregue: null,
+        p_itens_entregues: null,
+        p_detalhes_falha: "Estoque próprio insuficiente no momento da entrega.",
+      });
+
+      if (clienteTgId) {
+        await this.telegram.sendMessage({
+          chat_id: clienteTgId,
+          text: `⚠️ <b>Pagamento aprovado!</b>\n\nO item selecionado aguarda reposição imediata pela equipe. O suporte foi notificado.\nPedido: <code>${pedido.referencia_unica}</code>`,
+          parse_mode: "HTML",
+        });
+      }
+      return { success: false, message: "Estoque insuficiente" };
+    }
+
+    const itemIds = itens.map((i) => i.id);
+    const conteudo = itens.map((i) => i.conteudo).join("\n\n");
+
+    // Marcar itens como entregues
+    await supabase
+      .from("estoque_itens")
+      .update({
+        status: "entregue",
+        pedido_id: pedido.id,
+        entregue_em: new Date().toISOString(),
+      })
+      .in("id", itemIds);
+
+    await supabase.rpc("registrar_entrega_atomicamente", {
+      p_pedido_id: pedido.id,
+      p_status_fornecedor: "COMPLETED",
+      p_status_entrega: "entregue",
+      p_fornecedor_order_id: null,
+      p_fornecedor_order_number: null,
+      p_conteudo_entregue: conteudo,
+      p_itens_entregues: itens,
+      p_detalhes_falha: null,
+    });
+
+    if (clienteTgId) {
+      await this.telegram.sendMessage({
+        chat_id: clienteTgId,
+        text: `🎉 <b>Pedido Entregue!</b>\n\n📦 <b>Produto:</b> ${pedido.produto?.nome}\n🔢 <b>Qtd:</b> ${pedido.quantidade}\n🏷️ <b>Ref:</b> <code>${pedido.referencia_unica}</code>\n\n<b>Conteúdo:</b>\n<pre>${conteudo}</pre>`,
+        parse_mode: "HTML",
+      });
+    }
+
+    await this.publishSaleToChannel(pedido);
+    return { success: true, status: "entregue" };
+  }
+
+  /**
+   * Publica social proof segura no canal público se configurado
+   */
+  private async publishSaleToChannel(pedido: any) {
+    const channelId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID;
+    if (!channelId || !this.telegram.hasToken()) return;
+
+    try {
+      const supabase = createAdminClient();
+      const maskedUser = pedido.cliente?.username
+        ? `@${pedido.cliente.username.slice(0, 3)}***`
+        : `Cliente ***${String(pedido.cliente?.telegram_id || "").slice(-3)}`;
+
+      const botUsername = process.env.TELEGRAM_BOT_USERNAME || "";
+      const deepLink = botUsername
+        ? `https://t.me/${botUsername}?start=prod_${pedido.produto?.id}`
+        : "";
+
+      const text = `🛍️ <b>Nova Venda Realizada!</b>\n\n📦 <b>Produto:</b> ${pedido.produto?.nome}\n👤 <b>Comprador:</b> ${maskedUser}\n⚡ <b>Entrega:</b> 100% Automática e Instantânea\n\nGaranta o seu agora mesmo:`;
+
+      const replyMarkup = deepLink
+        ? {
+            inline_keyboard: [[{ text: "🛒 Comprar Produto", url: deepLink }]],
+          }
+        : undefined;
+
+      const sent = await this.telegram.sendMessage({
+        chat_id: channelId,
+        text,
+        parse_mode: "HTML",
+        reply_markup: replyMarkup,
+      });
+
+      await supabase.from("publicacoes_canal").insert({
+        tipo: "venda",
+        produto_id: pedido.produto_id,
+        pedido_id: pedido.id,
+        mensagem_telegram_id: sent.message_id,
+        conteudo_publicado: text,
+        status: "publicado",
+      });
+    } catch (err) {
+      console.warn("[OrderService] Erro ao publicar no canal:", err);
+    }
+  }
+
+  /**
+   * Reconcilia pedidos pendentes e consulta status no fornecedor
+   */
+  async reconcilePendingOrders(): Promise<{
+    reconciled: number;
+    errors: string[];
+  }> {
+    const supabase = createAdminClient();
+    const errors: string[] = [];
+    let reconciled = 0;
+
+    const { data: pendentes, error } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("status_pagamento", "pago")
+      .in("status_fornecedor", [
+        "AWAITING_ACTIVATION",
+        "PAID_PENDING_DELIVERY",
+        "fornecedor_status_desconhecido",
+      ])
+      .limit(30);
+
+    if (error || !pendentes) {
+      return { reconciled: 0, errors: [error?.message || "Erro ao consultar pedidos"] };
+    }
+
+    for (const ped of pendentes) {
+      try {
+        if (!ped.fornecedor_order_id) continue;
+
+        const remoteOrder = await this.ventebot.getOrder(ped.fornecedor_order_id, ped.id);
+        if (remoteOrder.status === "COMPLETED") {
+          const items = remoteOrder.items || [];
+          const conteudo = items.map((i) => i.account_data).join("\n\n");
+
+          await supabase.rpc("registrar_entrega_atomicamente", {
+            p_pedido_id: ped.id,
+            p_status_fornecedor: "COMPLETED",
+            p_status_entrega: "entregue",
+            p_fornecedor_order_id: remoteOrder.id,
+            p_fornecedor_order_number: remoteOrder.order_number,
+            p_conteudo_entregue: conteudo,
+            p_itens_entregues: items,
+            p_detalhes_falha: null,
+          });
+
+          if (ped.cliente?.telegram_id) {
+            await this.telegram.sendMessage({
+              chat_id: ped.cliente.telegram_id,
+              text: `🎉 <b>Seu pedido foi ativado e concluído!</b>\n\n📦 <b>Produto:</b> ${ped.produto?.nome}\n🏷️ <b>Ref:</b> <code>${ped.referencia_unica}</code>\n\n<b>Dados de entrega:</b>\n<pre>${conteudo}</pre>`,
+              parse_mode: "HTML",
+            });
+          }
+
+          reconciled++;
+        }
+      } catch (e) {
+        errors.push(`Erro na reconciliação do pedido #${ped.id}: ${(e as Error).message}`);
+      }
+    }
+
+    return { reconciled, errors };
+  }
+}

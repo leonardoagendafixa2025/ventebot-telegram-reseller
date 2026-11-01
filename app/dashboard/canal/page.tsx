@@ -1,7 +1,7 @@
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Radio, Send, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Radio, Send, CheckCircle2, AlertTriangle, Sparkles, RefreshCw, Bot } from "lucide-react";
 import { TelegramBotClient } from "@/lib/telegram/client";
+import { SyncService } from "@/lib/services/sync-service";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function CanalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sucesso?: string; erro?: string }>;
+  searchParams: Promise<{ sucesso?: string; erro?: string; alertas?: string }>;
 }) {
-  const { sucesso, erro } = await searchParams;
+  const { sucesso, erro, alertas } = await searchParams;
   const supabase = createAdminClient();
 
   const { data: produtos } = await supabase
@@ -28,12 +28,12 @@ export default async function CanalPage({
     .limit(20);
 
   const channelId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "@ventedigital_oficial_promo";
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "ventedigital_oficial_bot";
 
+  // Disparo Manual Específico
   async function sendBroadcast(formData: FormData) {
     "use server";
     const produtoId = formData.get("produto_id") as string;
-    const tipo = formData.get("tipo") as string;
+    const tipo = (formData.get("tipo") as string) || "oferta";
     const mensagemCustom = formData.get("mensagem") as string;
 
     const serverSupabase = createAdminClient();
@@ -96,6 +96,23 @@ export default async function CanalPage({
     redirect("/dashboard/canal?sucesso=1");
   }
 
+  // Execução do Piloto Automático (Sincronização + Alertas)
+  async function runAutoSyncBroadcast() {
+    "use server";
+    try {
+      const syncService = new SyncService();
+      const result = await syncService.syncCatalog({
+        broadcastAlerts: true,
+        forceFeaturedIfQuiet: true,
+      });
+
+      revalidatePath("/dashboard/canal");
+      redirect(`/dashboard/canal?sucesso=1&alertas=${result.broadcastsSent}`);
+    } catch (e: any) {
+      redirect(`/dashboard/canal?erro=${encodeURIComponent(e.message || "Falha na sincronização automática")}`);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -104,30 +121,64 @@ export default async function CanalPage({
           <span>Canal de Transmissão Telegram</span>
         </h1>
         <p className="text-sm text-slate-400 mt-1">
-          Publique ofertas, novidades e reposições automáticas com deep link direto para o Bot.
+          Publique ofertas manuais ou deixe o robô notificar novos produtos e reposições de estoque automaticamente.
         </p>
       </div>
 
       {sucesso && (
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span><b>Publicação enviada com sucesso!</b> A mensagem já está visível no grupo {channelId}.</span>
+          <span>
+            <b>Operação concluída com sucesso!</b>{" "}
+            {alertas ? `${alertas} alerta(s) disparado(s) no grupo ${channelId}.` : `A mensagem já está visível no grupo ${channelId}.`}
+          </span>
         </div>
       )}
 
       {erro && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span><b>Erro ao publicar:</b> {erro}</span>
+          <span><b>Erro:</b> {erro}</span>
         </div>
       )}
 
+      {/* Card do Piloto Automático */}
+      <div className="glass-panel rounded-2xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/30 to-purple-950/30">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-indigo-400" />
+              <h2 className="text-base font-semibold text-white">
+                Piloto Automático de Produtos Novos & Estoque
+              </h2>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                ATIVO VIA CRON
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+              O sistema monitora a API oficial da VenteBot a cada 2 horas. Sempre que um <b>novo produto</b> for lançado ou houver <b>reposição de estoque</b>, ele envia a notificação no grupo <code className="text-indigo-300">{channelId}</code> com botão de compra direta!
+            </p>
+          </div>
+
+          <form action={runAutoSyncBroadcast} className="shrink-0">
+            <button
+              type="submit"
+              className="w-full md:w-auto px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+            >
+              <Sparkles className="h-4 w-4 text-amber-300" />
+              <span>Sincronizar & Disparar Alerta Agora</span>
+            </button>
+          </form>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Formulário de Envio */}
+        {/* Formulário de Envio Manual */}
         <div className="glass-panel rounded-2xl p-6 border border-white/[0.08] h-fit">
           <h2 className="text-base font-semibold text-white mb-2 flex items-center gap-2">
             <Send className="h-4 w-4 text-indigo-400" />
-            <span>Publicar Oferta no Canal</span>
+            <span>Publicar Oferta Manual no Canal</span>
           </h2>
 
           <div className="mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
@@ -165,6 +216,7 @@ export default async function CanalPage({
               >
                 <option value="oferta">🔥 Oferta em Destaque</option>
                 <option value="restock">⚡ Reposição de Estoque</option>
+                <option value="novo_produto">🚀 Novo Produto</option>
               </select>
             </div>
 
@@ -182,21 +234,25 @@ export default async function CanalPage({
 
             <button
               type="submit"
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-4 w-4" />
               <span>Disparar para o Canal</span>
             </button>
           </form>
         </div>
 
-        {/* Histórico de Envios */}
-        <div className="lg:col-span-2 glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-          <div className="p-6 border-b border-white/[0.06]">
-            <h3 className="font-semibold text-white text-base">Histórico de Publicações</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Transmissões enviadas pelo Bot ao canal público
-            </p>
+        {/* Histórico de Publicações */}
+        <div className="glass-panel rounded-2xl border border-white/[0.08] lg:col-span-2 overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white">
+                Histórico de Transmissões
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Transmissões automáticas e manuais enviadas pelo Bot ao grupo público
+              </p>
+            </div>
           </div>
 
           <table className="w-full text-left text-sm">
@@ -213,7 +269,7 @@ export default async function CanalPage({
                 publicacoes.map((pub: any) => (
                   <tr key={pub.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4 text-xs font-medium text-slate-300 capitalize">
-                      {pub.tipo}
+                      {pub.tipo === "novo_produto" ? "🚀 Novo Produto" : pub.tipo === "restock" ? "⚡ Reposição" : "🔥 Oferta"}
                     </td>
                     <td className="px-6 py-4 text-xs text-white">
                       {pub.produto?.nome || "Geral"}

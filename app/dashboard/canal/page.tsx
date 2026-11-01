@@ -1,12 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
-import { Radio, Send, CheckCircle2 } from "lucide-react";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { Radio, Send, CheckCircle2, AlertTriangle } from "lucide-react";
 import { TelegramBotClient } from "@/lib/telegram/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function CanalPage() {
-  const supabase = await createClient();
+export default async function CanalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sucesso?: string; erro?: string }>;
+}) {
+  const { sucesso, erro } = await searchParams;
+  const supabase = createAdminClient();
 
   const { data: produtos } = await supabase
     .from("produtos")
@@ -20,8 +27,8 @@ export default async function CanalPage() {
     .order("created_at", { ascending: false })
     .limit(20);
 
-  const channelId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "Não configurado";
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "";
+  const channelId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "@ventedigital_oficial_promo";
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "ventedigital_oficial_bot";
 
   async function sendBroadcast(formData: FormData) {
     "use server";
@@ -29,42 +36,41 @@ export default async function CanalPage() {
     const tipo = formData.get("tipo") as string;
     const mensagemCustom = formData.get("mensagem") as string;
 
-    const serverSupabase = await createClient();
+    const serverSupabase = createAdminClient();
     const { data: prod } = await serverSupabase
       .from("produtos")
       .select("*")
       .eq("id", produtoId)
       .single();
 
-    if (!prod) return;
+    if (!prod) {
+      redirect("/dashboard/canal?erro=Produto+não+encontrado");
+    }
 
     const telegram = new TelegramBotClient();
-    const chId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID;
-    const botUser = process.env.TELEGRAM_BOT_USERNAME;
+    const chId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "@ventedigital_oficial_promo";
+    const botUser = (process.env.TELEGRAM_BOT_USERNAME || "ventedigital_oficial_bot").replace(/^@/, "");
 
-    if (!chId || !telegram.hasToken()) return;
-
-    const deepLink = botUser ? `https://t.me/${botUser}?start=prod_${prod.id}` : "";
+    const deepLink = `https://t.me/${botUser}?start=prod_${prod.id}`;
 
     const titulo =
       tipo === "restock"
         ? "⚡ <b>REPOSIÇÃO DE ESTOQUE!</b>"
         : "🔥 <b>OFERTA ESPECIAL DISPONÍVEL!</b>";
 
+    const precoUsdt = Number(prod.preco_venda_usd).toFixed(2);
     const text = `${titulo}\n\n${prod.emoji || "📦"} <b>${prod.nome}</b>\n\n${
       mensagemCustom || prod.descricao || ""
-    }\n\n💰 <b>Preço:</b> ${prod.preco_venda_stars} ⭐ Stars (~$${prod.preco_venda_usd.toFixed(2)} USD)\n🛡️ <b>Garantia:</b> ${prod.garantia_dias} dias com entrega 100% automática!`;
+    }\n\n💰 <b>Preço:</b> $${precoUsdt} USDT\n🛡️ <b>Garantia:</b> ${prod.garantia_dias} dias com entrega 100% automática!`;
 
     try {
       const sent = await telegram.sendMessage({
         chat_id: chId,
         text,
         parse_mode: "HTML",
-        reply_markup: deepLink
-          ? {
-              inline_keyboard: [[{ text: "🛒 Comprar no Bot Agora", url: deepLink }]],
-            }
-          : undefined,
+        reply_markup: {
+          inline_keyboard: [[{ text: "🛒 Comprar no Bot Agora", url: deepLink }]],
+        },
       });
 
       await serverSupabase.from("publicacoes_canal").insert({
@@ -76,9 +82,12 @@ export default async function CanalPage() {
       });
 
       revalidatePath("/dashboard/canal");
-    } catch (e) {
+    } catch (e: any) {
       console.error("[Canal] Falha ao enviar para o canal:", e);
+      redirect(`/dashboard/canal?erro=${encodeURIComponent(e.message || "Falha ao enviar ao Telegram")}`);
     }
+
+    redirect("/dashboard/canal?sucesso=1");
   }
 
   return (
@@ -92,6 +101,20 @@ export default async function CanalPage() {
           Publique ofertas, novidades e reposições automáticas com deep link direto para o Bot.
         </p>
       </div>
+
+      {sucesso && (
+        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span><b>Publicação enviada com sucesso!</b> A mensagem já está visível no grupo {channelId}.</span>
+        </div>
+      )}
+
+      {erro && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span><b>Erro ao publicar:</b> {erro}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Formulário de Envio */}
@@ -120,7 +143,7 @@ export default async function CanalPage() {
               >
                 {produtos && produtos.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.emoji || "📦"} {p.nome} — {p.preco_venda_stars} ⭐
+                    {p.emoji || "📦"} {p.nome} — ${Number(p.preco_venda_usd).toFixed(2)} USDT
                   </option>
                 ))}
               </select>

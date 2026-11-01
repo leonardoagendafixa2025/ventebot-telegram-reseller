@@ -9,7 +9,9 @@ export class TelegramBotClient {
   private baseUrl: string;
 
   constructor(token?: string) {
-    this.botToken = token || process.env.TELEGRAM_BOT_TOKEN || "";
+    const raw = (token || process.env.TELEGRAM_BOT_TOKEN || "").trim();
+    const cleanToken = raw.replace(/^bot/i, "").replace(/["']/g, "").trim();
+    this.botToken = cleanToken || "9289684578:AAEopClDt2V-kj7pMVXuOlnA8TUu2mOPLqM";
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 

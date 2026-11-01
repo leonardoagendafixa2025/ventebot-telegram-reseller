@@ -17,7 +17,11 @@ export class VenteBotClient implements SupplierProvider {
   private timeoutMs: number;
 
   constructor(apiKey?: string, baseUrl?: string, timeoutMs = 15000) {
-    this.apiKey = apiKey || process.env.VENTEBOT_RESELLER_KEY || "";
+    this.apiKey = (
+      apiKey ||
+      process.env.VENTEBOT_RESELLER_KEY ||
+      "vbr_live_be6262c238_I6HGpiDbb8zil6kckkamK0QLoaec0vEa6PJ62hLbkJI"
+    ).trim();
     this.baseUrl = (
       baseUrl ||
       process.env.VENTEBOT_BASE_URL ||

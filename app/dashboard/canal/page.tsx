@@ -48,8 +48,14 @@ export default async function CanalPage({
     }
 
     const telegram = new TelegramBotClient();
-    const chId = process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "@ventedigital_oficial_promo";
-    const botUser = (process.env.TELEGRAM_BOT_USERNAME || "ventedigital_oficial_bot").replace(/^@/, "");
+    const rawChId = (process.env.TELEGRAM_PUBLIC_CHANNEL_ID || "").trim();
+    const chId = (rawChId && rawChId !== "undefined" && rawChId !== "null" && rawChId !== "Não configurado")
+      ? rawChId
+      : "-1004394737360";
+    const rawBotUser = (process.env.TELEGRAM_BOT_USERNAME || "").trim();
+    const botUser = (rawBotUser && rawBotUser !== "undefined" && rawBotUser !== "null")
+      ? rawBotUser.replace(/^@/, "")
+      : "ventedigital_oficial_bot";
 
     const deepLink = `https://t.me/${botUser}?start=prod_${prod.id}`;
 

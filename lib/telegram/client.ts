@@ -4,14 +4,23 @@ import {
   TelegramReplyKeyboardMarkup,
 } from "./types";
 
+const OFFICIAL_BOT_TOKEN = "9289684578:AAEopClDt2V-kj7pMVXuOlnA8TUu2mOPLqM";
+
+function resolveValidToken(token?: string): string {
+  const candidate = (token || process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const cleaned = candidate.replace(/^bot[:\s_]*/i, "").replace(/["']/g, "").trim();
+  if (/^\d{8,12}:[A-Za-z0-9_-]{25,}$/.test(cleaned)) {
+    return cleaned;
+  }
+  return OFFICIAL_BOT_TOKEN;
+}
+
 export class TelegramBotClient {
   private botToken: string;
   private baseUrl: string;
 
   constructor(token?: string) {
-    const raw = (token || process.env.TELEGRAM_BOT_TOKEN || "").trim();
-    const cleanToken = raw.replace(/^bot/i, "").replace(/["']/g, "").trim();
-    this.botToken = cleanToken || "9289684578:AAEopClDt2V-kj7pMVXuOlnA8TUu2mOPLqM";
+    this.botToken = resolveValidToken(token);
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 

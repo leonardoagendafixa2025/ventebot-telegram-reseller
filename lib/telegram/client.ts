@@ -134,6 +134,7 @@ export class TelegramBotClient {
       commands: [
         { command: "start", description: "Abrir Loja Digital e Inicio" },
         { command: "loja", description: "Ver Catalogo de Produtos" },
+        { command: "carrinho", description: "Meu Carrinho de Compras" },
         { command: "destaques", description: "Mais Vendidos e Ofertas" },
         { command: "buscar", description: "Pesquisar Produto por Nome" },
         { command: "pedidos", description: "Meus Pedidos e Licencas" },

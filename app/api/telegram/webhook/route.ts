@@ -4,12 +4,13 @@ import { TelegramInlineKeyboardMarkup, TelegramUpdate } from "@/lib/telegram/typ
 import { createAdminClient } from "@/lib/supabase/admin";
 import { OrderService } from "@/lib/services/order-service";
 
-// Teclado fixo persistente na base do chat do usuário
+// Teclado fixo persistente na base do chat do usuário com acesso direto ao Carrinho
 const MAIN_REPLY_KEYBOARD = {
   keyboard: [
-    [{ text: "🛍️ Ver Produtos" }, { text: "🔥 Destaques" }],
-    [{ text: "🔍 Buscar Produto" }, { text: "📦 Meus Pedidos" }],
-    [{ text: "👤 Minha Conta" }, { text: "🗣️ Suporte" }],
+    [{ text: "🛍️ Ver Produtos" }, { text: "🛒 Meu Carrinho" }],
+    [{ text: "🔥 Destaques" }, { text: "🔍 Buscar Produto" }],
+    [{ text: "📦 Meus Pedidos" }, { text: "👤 Minha Conta" }],
+    [{ text: "🗣️ Suporte" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -217,7 +218,7 @@ export async function POST(req: NextRequest) {
       .eq("telegram_id", user.id)
       .maybeSingle();
 
-    // 4.1 Cliente cancelando fluxo ativo
+    // 4.1 Cancelamento geral
     if (text.toLowerCase() === "/cancelar" || text.toLowerCase() === "cancelar" || text === "❌ Cancelar") {
       await supabase.from("clientes").update({ estado_conversa: null }).eq("telegram_id", user.id);
       await telegram.sendMessage({
@@ -237,11 +238,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.3 Cliente enviando ID de transação Binance (TxID)
+    // 4.3 Cliente digitando quantidade customizada para um produto
+    if (clienteAtual?.estado_conversa?.startsWith("aguardando_qtd:")) {
+      const prodId = clienteAtual.estado_conversa.replace("aguardando_qtd:", "");
+      await supabase.from("clientes").update({ estado_conversa: null }).eq("telegram_id", user.id);
+
+      const parsedQty = parseInt(text.replace(/[^0-9]/g, ""), 10);
+      if (isNaN(parsedQty) || parsedQty < 1 || parsedQty > 100) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: "⚠️ <b>Quantidade inválida.</b>\n\nPor favor, envie um número inteiro entre <b>1</b> e <b>100</b>:",
+          parse_mode: "HTML",
+        });
+        await supabase
+          .from("clientes")
+          .update({ estado_conversa: `aguardando_qtd:${prodId}` })
+          .eq("telegram_id", user.id);
+        return NextResponse.json({ ok: true });
+      }
+
+      await renderProductDetails(telegram, chatId, prodId, parsedQty);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 4.4 Cliente enviando TxID de pedido individual (com qualquer quantidade)
     if (clienteAtual?.estado_conversa?.startsWith("aguardando_txid:")) {
       const pedidoId = clienteAtual.estado_conversa.replace("aguardando_txid:", "");
-
-      // Limpa estado da conversa
       await supabase.from("clientes").update({ estado_conversa: null }).eq("telegram_id", user.id);
 
       const txId = text.replace(/[^a-zA-Z0-9_-]/g, "").trim();
@@ -283,7 +305,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      // Notifica o cliente do início do processamento automático
       await telegram.sendMessage({
         chat_id: chatId,
         text: `⏳ <b>Transação Binance recebida:</b> <code>${txId}</code>\n\nValidando pagamento e liberando sua entrega 100% automática...`,
@@ -314,7 +335,7 @@ export async function POST(req: NextRequest) {
         console.error("[Binance Checkout] Erro no processamento automático:", err);
         await telegram.sendMessage({
           chat_id: chatId,
-          text: `⚠️ <b>Recebemos seu ID (<code>${txId}</code>)!</b>\n\nO sistema está processando sua licença com o fornecedor. Se demorar mais de 1 minuto, consulte em <b>📦 Meus Pedidos</b> ou fale com nosso suporte.`,
+          text: `⚠️ <b>Recebemos seu ID (<code>${txId}</code>)!</b>\n\nO sistema está processando seu pedido. Se demorar mais de 1 minuto, consulte em <b>📦 Meus Pedidos</b> ou fale com nosso suporte.`,
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
@@ -328,14 +349,105 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.4 Deep link: /start prod_<id>
-    if (text.startsWith("/start prod_")) {
-      const prodId = text.replace("/start prod_", "").trim();
-      await renderProductDetails(telegram, chatId, prodId);
+    // 4.5 Cliente enviando TxID de lote do carrinho (múltiplos itens)
+    if (clienteAtual?.estado_conversa?.startsWith("aguardando_txid_cart:")) {
+      const pedidoIdsStr = clienteAtual.estado_conversa.replace("aguardando_txid_cart:", "");
+      const pedidoIds = pedidoIdsStr.split(",").map((s: string) => s.trim()).filter(Boolean);
+
+      await supabase.from("clientes").update({ estado_conversa: null }).eq("telegram_id", user.id);
+
+      const txId = text.replace(/[^a-zA-Z0-9_-]/g, "").trim();
+      if (!txId || txId.length < 5) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `⚠️ <b>Código muito curto ou inválido.</b>\n\nPor favor, envie o ID da transação ou ordem gerado pelo app da Binance:`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⚡ Tentar Novamente", callback_data: "informar_txid_cart" }],
+            ],
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Anti-Replay
+      const { data: pagamentoExistente } = await supabase
+        .from("pagamentos")
+        .select("id")
+        .eq("referencia_externa", txId)
+        .maybeSingle();
+
+      if (pagamentoExistente) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ <b>Este ID de transação já foi utilizado anteriormente.</b>\nCada compra requer uma transação única da Binance.`,
+          parse_mode: "HTML",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `⏳ <b>Transação recebida:</b> <code>${txId}</code>\n\nValidando pagamento e processando a entrega de <b>${pedidoIds.length} produto(s)</b> do seu carrinho 100% automático...`,
+        parse_mode: "HTML",
+      });
+
+      // Esvazia carrinho do cliente
+      await supabase.from("clientes").update({ carrinho: [] }).eq("telegram_id", user.id);
+
+      // Processa cada pedido do carrinho
+      for (let i = 0; i < pedidoIds.length; i++) {
+        const pId = pedidoIds[i];
+        try {
+          await supabase
+            .from("pedidos")
+            .update({
+              binance_tx_id: txId,
+              comprovante_texto: text,
+            })
+            .eq("id", pId);
+
+          const refExterna = i === 0 ? txId : `${txId}_item_${i + 1}`;
+
+          await orderService.handlePaymentConfirmation({
+            pedidoId: pId,
+            provedor: "binance_id",
+            referenciaExterna: refExterna,
+            valorStars: 0,
+            payloadSeguro: {
+              binance_uid_destinatario: "1257797463",
+              binance_tx_id: txId,
+              data: new Date().toISOString(),
+              cart_index: i + 1,
+            },
+          });
+        } catch (err) {
+          console.error(`[Cart Checkout] Erro no pedido ${pId}:`, err);
+        }
+      }
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🎉 <b>TODOS OS ITENS DO SEU CARRINHO FORAM PROCESSADOS!</b>\n\n` +
+          `Suas licenças e dados de acesso foram enviados acima e já constam salvos permanentemente em <b>📦 Meus Pedidos</b>.\n\n` +
+          `<i>Obrigado pela preferência na VenteDigital! 🚀</i>`,
+        parse_mode: "HTML",
+        reply_markup: MAIN_REPLY_KEYBOARD,
+      });
+
       return NextResponse.json({ ok: true });
     }
 
-    // 4.5 Comando de Busca (/buscar <termo>)
+    // 4.6 Deep link: /start prod_<id>
+    if (text.startsWith("/start prod_")) {
+      const prodId = text.replace("/start prod_", "").trim();
+      await renderProductDetails(telegram, chatId, prodId, 1);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 4.7 Comando de Busca (/buscar <termo>)
     if (text.startsWith("/buscar")) {
       const termo = text.replace("/buscar", "").trim();
       if (!termo) {
@@ -355,7 +467,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.6 Comando Início / Start
+    // 4.8 Comando Início / Start
     if (text === "/start" || text === "🏠 Início" || text === "/home") {
       await telegram.sendMessage({
         chat_id: chatId,
@@ -363,12 +475,12 @@ export async function POST(req: NextRequest) {
           `👋 Olá, <b>${user.first_name || "Cliente"}</b>!\n\n` +
           `🛒 <b>Bem-vindo à Loja Oficial VenteDigital!</b>\n\n` +
           `Sua loja de produtos digitais no Telegram: Inteligência Artificial, Ferramentas Dev, Streaming e Licenças Premium com os melhores preços em <b>USDT</b> e <b>entrega 100% automática</b>! ⚡\n\n` +
-          `✨ <b>Vantagens da Loja:</b>\n` +
-          `• Mais de 90 produtos e licenças oficiais\n` +
-          `• Pagamento direto via <b>Binance UID</b> (taxa 0%)\n` +
-          `• Entrega imediata dos dados de acesso no chat\n` +
-          `• Garantia de funcionamento e suporte dedicado\n\n` +
-          `👇 <i>Escolha uma das categorias abaixo para explorar:</i>`,
+          `✨ <b>Novidades:</b>\n` +
+          `• Compre múltiplas quantidades de qualquer produto (1x, 2x, 5x, 10x ou digite)\n` +
+          `• <b>Carrinho de Compras integrado:</b> junte vários itens e pague tudo em uma única transferência!\n` +
+          `• Pagamento instantâneo via <b>Binance UID</b> (taxa 0%)\n` +
+          `• Entrega imediata dos dados de acesso no chat\n\n` +
+          `👇 <i>Escolha uma das categorias abaixo para começar:</i>`,
         parse_mode: "HTML",
         reply_markup: MAIN_REPLY_KEYBOARD,
       });
@@ -377,7 +489,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.7 Catálogo de Produtos
+    // 4.9 Catálogo de Produtos
     if (
       text === "/loja" ||
       text === "/products" ||
@@ -390,13 +502,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.8 Destaques
+    // 4.10 Carrinho de Compras
+    if (
+      text === "/carrinho" ||
+      text === "/cart" ||
+      text === "🛒 Meu Carrinho" ||
+      text === "🛒 Carrinho"
+    ) {
+      await renderCart(telegram, chatId, user.id);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 4.11 Destaques
     if (text === "/destaques" || text === "🔥 Destaques") {
       await renderHighlights(telegram, chatId);
       return NextResponse.json({ ok: true });
     }
 
-    // 4.9 Buscar
+    // 4.12 Buscar
     if (text === "🔍 Buscar" || text === "🔍 Buscar Produto") {
       await supabase
         .from("clientes")
@@ -411,13 +534,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.10 Meus Pedidos
+    // 4.13 Meus Pedidos
     if (text === "/orders" || text === "/pedidos" || text === "📦 Meus pedidos" || text === "📦 Meus Pedidos") {
       await renderUserOrders(telegram, chatId, user.id);
       return NextResponse.json({ ok: true });
     }
 
-    // 4.11 Suporte
+    // 4.14 Suporte
     if (text === "/support" || text === "/ajuda" || text === "/suporte" || text === "🗣️ Suporte") {
       await telegram.sendMessage({
         chat_id: chatId,
@@ -439,7 +562,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 4.12 Minha Conta
+    // 4.15 Minha Conta
     if (text === "👤 Minha conta" || text === "👤 Minha Conta") {
       await telegram.sendMessage({
         chat_id: chatId,
@@ -454,6 +577,7 @@ export async function POST(req: NextRequest) {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
+            [{ text: "🛒 Ver Meu Carrinho", callback_data: "view_cart" }],
             [{ text: "📦 Consultar Meus Pedidos", callback_data: "my_orders" }],
             [{ text: "🛍️ Explorar Catálogo", callback_data: "browse_cat" }],
           ],
@@ -476,9 +600,10 @@ export async function POST(req: NextRequest) {
     } catch {
       // Ignora expiração de callback query
     }
+
     if (!chatId) return NextResponse.json({ ok: true });
 
-    // Botão noop (ex: indicador de página)
+    // Botão noop (ex: indicador estático)
     if (data === "noop") {
       return NextResponse.json({ ok: true });
     }
@@ -492,6 +617,54 @@ export async function POST(req: NextRequest) {
     // Ver produtos em destaque
     if (data === "highlights") {
       await renderHighlights(telegram, chatId, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Ver carrinho de compras
+    if (data === "view_cart") {
+      await renderCart(telegram, chatId, user.id, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Limpar carrinho
+    if (data === "clear_cart") {
+      await clearCart(telegram, chatId, user.id, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Finalizar compra do carrinho completo
+    if (data === "checkout_cart") {
+      await checkoutCart(telegram, orderService, chatId, user);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Cliente informando que já transferiu o valor do carrinho
+    if (data === "informar_txid_cart") {
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🧾 <b>Aguardando ID de Transação Binance (Carrinho)</b>\n\n` +
+          `Envie aqui no chat o <b>ID da Transação / Ordem</b> gerado no app da Binance referente ao envio de USDT para o UID <code>1257797463</code>:\n\n` +
+          `<i>⚡ Assim que você enviar, o sistema verificará e entregará todos os itens do carrinho automaticamente!</i>\n\n` +
+          `<i>(Para cancelar, envie /cancelar)</i>`,
+        parse_mode: "HTML",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Cancelar carrinho
+    if (data === "cancelar_cart") {
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin
+        .from("clientes")
+        .update({ estado_conversa: null })
+        .eq("telegram_id", user.id);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: "❌ Pagamento do carrinho cancelado. Seus itens permanecem salvos no carrinho.",
+        reply_markup: MAIN_REPLY_KEYBOARD,
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -511,6 +684,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Digitar quantidade personalizada (prompt_qty_<prodId>)
+    if (data.startsWith("prompt_qty_")) {
+      const prodId = data.replace("prompt_qty_", "");
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin
+        .from("clientes")
+        .update({ estado_conversa: `aguardando_qtd:${prodId}` })
+        .eq("telegram_id", user.id);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `✏️ <b>Informe a quantidade desejada:</b>\n\n` +
+          `Digite um número inteiro entre <b>1</b> e <b>100</b> (ex: 4, 12, 20...):\n\n` +
+          `<i>(Se desejar cancelar, digite /cancelar)</i>`,
+        parse_mode: "HTML",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Adicionar item ao carrinho com quantidade (add_cart_<prodId>_<qty>)
+    if (data.startsWith("add_cart_")) {
+      const parts = data.replace("add_cart_", "").split("_");
+      const prodId = parts[0];
+      const qty = parts[1] ? parseInt(parts[1], 10) : 1;
+      await addToCart(telegram, chatId, user, prodId, qty);
+      return NextResponse.json({ ok: true });
+    }
+
     // Navegar em categoria com paginação (cat_<catId>_<page>)
     if (data.startsWith("cat_")) {
       const parts = data.replace("cat_", "").split("_");
@@ -520,21 +722,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Ver detalhes do produto
+    // Ver detalhes do produto com seletor de quantidade (prod_<prodId> ou prod_<prodId>_<qty>)
     if (data.startsWith("prod_")) {
-      const prodId = data.replace("prod_", "");
-      await renderProductDetails(telegram, chatId, prodId, messageId);
+      const parts = data.replace("prod_", "").split("_");
+      const prodId = parts[0];
+      const qty = parts[1] ? parseInt(parts[1], 10) : 1;
+      await renderProductDetails(telegram, chatId, prodId, qty, messageId);
       return NextResponse.json({ ok: true });
     }
 
-    // Iniciar compra (Checkout Binance UID)
+    // Iniciar compra direta com quantidade (buy_<prodId> ou buy_<prodId>_<qty>)
     if (data.startsWith("buy_")) {
-      const prodId = data.replace("buy_", "");
-      await initiateCheckout(telegram, orderService, chatId, user, prodId);
+      const parts = data.replace("buy_", "").split("_");
+      const prodId = parts[0];
+      const qty = parts[1] ? parseInt(parts[1], 10) : 1;
+      await initiateCheckout(telegram, orderService, chatId, user, prodId, qty);
       return NextResponse.json({ ok: true });
     }
 
-    // Cliente informando que já transferiu e deseja enviar TxID
+    // Cliente informando que já transferiu pedido individual
     if (data.startsWith("informar_txid_")) {
       const pedidoId = data.replace("informar_txid_", "");
       const supabaseAdmin = createAdminClient();
@@ -555,7 +761,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Cancelar pedido pendente
+    // Cancelar pedido individual pendente
     if (data.startsWith("cancelar_pedido_")) {
       const pedidoId = data.replace("cancelar_pedido_", "");
       const supabaseAdmin = createAdminClient();
@@ -634,7 +840,6 @@ async function renderCategories(
     return;
   }
 
-  // Contagem dinâmica de produtos ativos por categoria
   const { data: produtos } = await supabase
     .from("produtos")
     .select("categoria_id")
@@ -649,7 +854,6 @@ async function renderCategories(
 
   const buttons: { text: string; callback_data: string }[][] = [];
 
-  // Agrupa as categorias de 2 em 2 para um layout elegante no celular
   for (let i = 0; i < categorias.length; i += 2) {
     const row = [];
     const cat1 = categorias[i];
@@ -672,6 +876,7 @@ async function renderCategories(
 
   buttons.push([
     { text: "🔥 Mais Vendidos / Destaques", callback_data: "highlights" },
+    { text: "🛒 Ver Meu Carrinho", callback_data: "view_cart" },
   ]);
   buttons.push([
     { text: "🔍 Buscar por Nome", callback_data: "prompt_search" },
@@ -681,7 +886,7 @@ async function renderCategories(
   const text =
     `🛍️ <b>Catálogo Oficial de Produtos Digitais</b>\n\n` +
     `Selecione uma categoria abaixo para navegar pelos produtos ou faça uma busca direta:\n\n` +
-    `⚡ <i>Todos os produtos contam com entrega 100% automática e pagamento instantâneo via Binance UID (USDT).</i>`;
+    `⚡ <i>Todos os produtos contam com compra múltipla, carrinho integrado e entrega 100% automática via Binance UID (USDT)!</i>`;
 
   await sendOrEdit(telegram, chatId, messageId, text, { inline_keyboard: buttons });
 }
@@ -742,7 +947,7 @@ async function renderProductsInCategory(
     buttons.push([
       {
         text: `${p.emoji || "🔹"} ${nomeCurto} — $${preco} USDT`,
-        callback_data: `prod_${p.id}`,
+        callback_data: `prod_${p.id}_1`,
       },
     ]);
   }
@@ -763,27 +968,29 @@ async function renderProductsInCategory(
   }
 
   buttons.push([
-    { text: "🔍 Buscar", callback_data: "prompt_search" },
-    { text: "📁 Todas as Categorias", callback_data: "browse_cat" },
+    { text: "🛒 Meu Carrinho", callback_data: "view_cart" },
+    { text: "📁 Categorias", callback_data: "browse_cat" },
   ]);
 
   const text =
     `${categoria.emoji || "📁"} <b>${categoria.nome}</b>\n` +
     `<i>Mostrando ${produtos.length} de ${total} produtos (Página ${page}/${totalPages})</i>\n\n` +
-    `Toque no item desejado para ver detalhes, garantia e comprar:`;
+    `Toque no item desejado para ver detalhes, escolher a quantidade e comprar:`;
 
   await sendOrEdit(telegram, chatId, messageId, text, { inline_keyboard: buttons });
 }
 
 /**
- * Renderiza os detalhes completos de um produto específico com botão de compra
+ * Renderiza os detalhes de um produto com seletor interativo de quantidade
  */
 async function renderProductDetails(
   telegram: TelegramBotClient,
   chatId: number,
   produtoId: string,
+  qty: number = 1,
   messageId?: number
 ) {
+  const currentQty = Math.max(1, Math.min(100, Math.floor(qty) || 1));
   const supabase = createAdminClient();
   const { data: prod } = await supabase
     .from("produtos")
@@ -799,7 +1006,10 @@ async function renderProductDetails(
     return;
   }
 
-  const totalUsdt = Number(prod.preco_venda_usd).toFixed(2);
+  const precoUnitario = Number(prod.preco_venda_usd);
+  const totalUsdt = (precoUnitario * currentQty).toFixed(2);
+  const unitUsdt = precoUnitario.toFixed(2);
+
   const entregaTexto =
     prod.tipo_entrega === "stock"
       ? "⚡ Imediata no Chat (Estoque Automático)"
@@ -823,26 +1033,372 @@ async function renderProductDetails(
   const text =
     `${prod.emoji || "🛍️"} <b>${prod.nome}</b>\n\n` +
     `📂 <b>Categoria:</b> ${categoriaNome}\n` +
-    `💰 <b>Preço:</b> <b>$${totalUsdt} USDT</b>\n` +
+    `💵 <b>Preço Unitário:</b> <b>$${unitUsdt} USDT</b>\n` +
+    `🔢 <b>Quantidade Selecionada:</b> <b>${currentQty} unidade(s)</b>\n` +
+    `💰 <b>Valor Total:</b> <b>$${totalUsdt} USDT</b>\n` +
     `⚡ <b>Entrega:</b> ${entregaTexto}\n` +
     `🛡️ <b>Garantia:</b> ${prod.garantia_dias || 30} dias\n` +
     `📦 <b>Estoque:</b> ${estoqueTexto}\n\n` +
     `📝 <b>Detalhes do Produto:</b>\n${desc}\n\n` +
     `═══════════════════════════\n` +
-    `💳 <b>Pagamento direto via Binance UID (USDT)</b>\n` +
-    `⚡ <i>Liberação 100% automática logo após informar o ID da transação.</i>`;
+    `🔢 <b>Selecione ou ajuste a quantidade abaixo:</b>`;
 
+  const decQty = Math.max(1, currentQty - 1);
+  const incQty = Math.min(100, currentQty + 1);
   const backCallback = prod.categoria_id ? `cat_${prod.categoria_id}_1` : "browse_cat";
+
+  const inline_keyboard: any[][] = [
+    // Linha 1: Stepper ➖ / ➕
+    [
+      { text: "➖ 1", callback_data: `prod_${prod.id}_${decQty}` },
+      { text: `📦 Qtd: ${currentQty}`, callback_data: "noop" },
+      { text: "➕ 1", callback_data: `prod_${prod.id}_${incQty}` },
+    ],
+    // Linha 2: Quantidades pré-definidas rápidas
+    [
+      { text: "1x", callback_data: `prod_${prod.id}_1` },
+      { text: "2x", callback_data: `prod_${prod.id}_2` },
+      { text: "3x", callback_data: `prod_${prod.id}_3` },
+      { text: "5x", callback_data: `prod_${prod.id}_5` },
+      { text: "10x", callback_data: `prod_${prod.id}_10` },
+    ],
+    // Linha 3: Digitar quantidade customizada
+    [
+      { text: "✏️ Digitar Outra Quantidade", callback_data: `prompt_qty_${prod.id}` },
+    ],
+    // Linha 4: Comprar direto com essa quantidade
+    [
+      {
+        text: `⚡ Comprar ${currentQty}x por $${totalUsdt} USDT`,
+        callback_data: `buy_${prod.id}_${currentQty}`,
+      },
+    ],
+    // Linha 5: Adicionar ao Carrinho para comprar múltiplos produtos
+    [
+      {
+        text: `🛒 Adicionar ao Carrinho (${currentQty}x)`,
+        callback_data: `add_cart_${prod.id}_${currentQty}`,
+      },
+    ],
+    // Linha 6: Navegação
+    [
+      { text: "⬅️ Voltar à Lista", callback_data: backCallback },
+      { text: "🛒 Ver Carrinho", callback_data: "view_cart" },
+    ],
+  ];
+
+  await sendOrEdit(telegram, chatId, messageId, text, { inline_keyboard });
+}
+
+/**
+ * Adiciona um produto e quantidade ao carrinho de compras do cliente
+ */
+async function addToCart(
+  telegram: TelegramBotClient,
+  chatId: number,
+  user: any,
+  produtoId: string,
+  quantidade: number
+) {
+  const supabase = createAdminClient();
+  const qty = Math.max(1, Math.min(100, Math.floor(quantidade) || 1));
+
+  const { data: cliente } = await supabase
+    .from("clientes")
+    .select("id, carrinho")
+    .eq("telegram_id", user.id)
+    .maybeSingle();
+
+  const { data: prod } = await supabase
+    .from("produtos")
+    .select("id, nome, emoji, preco_venda_usd")
+    .eq("id", produtoId)
+    .eq("ativo", true)
+    .maybeSingle();
+
+  if (!prod) {
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: "⚠️ Produto não localizado.",
+    });
+    return;
+  }
+
+  let cart: Array<{ produto_id: string; quantidade: number }> = Array.isArray(cliente?.carrinho)
+    ? cliente.carrinho
+    : [];
+
+  const existingIndex = cart.findIndex((item) => item.produto_id === produtoId);
+  if (existingIndex >= 0) {
+    cart[existingIndex].quantidade += qty;
+  } else {
+    cart.push({ produto_id: produtoId, quantidade: qty });
+  }
+
+  await supabase
+    .from("clientes")
+    .update({ carrinho: cart })
+    .eq("telegram_id", user.id);
+
+  const subtotal = (Number(prod.preco_venda_usd) * qty).toFixed(2);
+
+  await telegram.sendMessage({
+    chat_id: chatId,
+    text:
+      `✅ <b>Item adicionado ao carrinho!</b>\n\n` +
+      `📦 <b>${qty}x ${prod.emoji || "🔹"} ${prod.nome}</b>\n` +
+      `💰 Subtotal deste item: <b>$${subtotal} USDT</b>\n\n` +
+      `Você pode continuar explorando outros itens ou ir para o carrinho para finalizar a compra:`,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "🛒 Ver Meu Carrinho", callback_data: "view_cart" }],
+        [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
+      ],
+    },
+  });
+}
+
+/**
+ * Renderiza o carrinho de compras com todos os produtos, quantidades e valores
+ */
+async function renderCart(
+  telegram: TelegramBotClient,
+  chatId: number,
+  telegramId: number,
+  messageId?: number
+) {
+  const supabase = createAdminClient();
+  const { data: cliente } = await supabase
+    .from("clientes")
+    .select("id, carrinho")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+
+  const cart: Array<{ produto_id: string; quantidade: number }> = Array.isArray(cliente?.carrinho)
+    ? cliente.carrinho
+    : [];
+
+  if (cart.length === 0) {
+    await sendOrEdit(
+      telegram,
+      chatId,
+      messageId,
+      `🛒 <b>Seu Carrinho está Vazio</b>\n\n` +
+        `Você ainda não adicionou produtos ao carrinho.\n` +
+        `Navegue pelo nosso catálogo e adicione itens para comprar juntos:`,
+      {
+        inline_keyboard: [
+          [{ text: "🛍️ Ver Catálogo", callback_data: "browse_cat" }],
+          [{ text: "🔥 Destaques", callback_data: "highlights" }],
+        ],
+      }
+    );
+    return;
+  }
+
+  const prodIds = cart.map((i) => i.produto_id);
+  const { data: produtos } = await supabase
+    .from("produtos")
+    .select("id, nome, emoji, preco_venda_usd")
+    .in("id", prodIds);
+
+  const prodMap = new Map((produtos || []).map((p) => [p.id, p]));
+
+  let totalGeralUsdt = 0;
+  let totalItens = 0;
+  let text = `🛒 <b>Seu Carrinho de Compras</b>\n\n`;
+
+  let idx = 1;
+  for (const item of cart) {
+    const prod = prodMap.get(item.produto_id);
+    if (!prod) continue;
+
+    const unit = Number(prod.preco_venda_usd);
+    const sub = unit * item.quantidade;
+    totalGeralUsdt += sub;
+    totalItens += item.quantidade;
+
+    text += `<b>${idx}.</b> ${prod.emoji || "🔹"} <b>${prod.nome}</b>\n`;
+    text += `   • <b>Qtd:</b> ${item.quantidade}x • <b>Unit:</b> $${unit.toFixed(2)} • <b>Subtotal:</b> $${sub.toFixed(2)} USDT\n\n`;
+    idx++;
+  }
+
+  text += `═══════════════════════════\n`;
+  text += `🔢 <b>Total de Itens:</b> ${totalItens} unidade(s)\n`;
+  text += `💰 <b>TOTAL GERAL:</b> <b>$${totalGeralUsdt.toFixed(2)} USDT</b>\n`;
+  text += `═══════════════════════════\n\n`;
+  text += `<i>Pagamento único via Binance UID com entrega 100% automática de todos os itens!</i>`;
+
+  const totalFormatted = totalGeralUsdt.toFixed(2);
 
   await sendOrEdit(telegram, chatId, messageId, text, {
     inline_keyboard: [
-      [{ text: `🛒 Comprar por $${totalUsdt} USDT`, callback_data: `buy_${prod.id}` }],
       [
-        { text: "⬅️ Voltar à Categoria", callback_data: backCallback },
-        { text: "📁 Todas as Categorias", callback_data: "browse_cat" },
+        {
+          text: `⚡ Finalizar Compra ($${totalFormatted} USDT)`,
+          callback_data: "checkout_cart",
+        },
       ],
-      [{ text: "🔍 Buscar Outro", callback_data: "prompt_search" }],
+      [
+        { text: "🛍️ Adicionar Mais Produtos", callback_data: "browse_cat" },
+        { text: "🗑️ Limpar Carrinho", callback_data: "clear_cart" },
+      ],
     ],
+  });
+}
+
+/**
+ * Esvazia o carrinho de compras do cliente
+ */
+async function clearCart(
+  telegram: TelegramBotClient,
+  chatId: number,
+  telegramId: number,
+  messageId?: number
+) {
+  const supabase = createAdminClient();
+  await supabase
+    .from("clientes")
+    .update({ carrinho: [] })
+    .eq("telegram_id", telegramId);
+
+  await sendOrEdit(
+    telegram,
+    chatId,
+    messageId,
+    "🗑️ <b>Carrinho esvaziado com sucesso!</b>\n\nNavegue pelas categorias para selecionar novos produtos:",
+    {
+      inline_keyboard: [
+        [{ text: "🛍️ Ver Catálogo", callback_data: "browse_cat" }],
+        [{ text: "🔥 Destaques", callback_data: "highlights" }],
+      ],
+    }
+  );
+}
+
+/**
+ * Executa o checkout do carrinho completo criando os pedidos atômicos
+ */
+async function checkoutCart(
+  telegram: TelegramBotClient,
+  orderService: OrderService,
+  chatId: number,
+  user: any
+) {
+  const supabase = createAdminClient();
+  const { data: cliente } = await supabase
+    .from("clientes")
+    .select("id, carrinho")
+    .eq("telegram_id", user.id)
+    .maybeSingle();
+
+  const cart: Array<{ produto_id: string; quantidade: number }> = Array.isArray(cliente?.carrinho)
+    ? cliente.carrinho
+    : [];
+
+  if (cart.length === 0) {
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: "🛒 Seu carrinho está vazio.",
+    });
+    return;
+  }
+
+  const createdOrders: any[] = [];
+  for (const item of cart) {
+    try {
+      const orderData = await orderService.createOrder({
+        telegramId: user.id,
+        username: user.username,
+        firstName: user.first_name,
+        produtoId: item.produto_id,
+        quantidade: item.quantidade,
+        metodoPagamento: "binance_id",
+      });
+      createdOrders.push(orderData);
+    } catch (e: any) {
+      console.error("[Cart Checkout] Erro ao criar pedido de item do carrinho:", e);
+    }
+  }
+
+  if (createdOrders.length === 0) {
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: "❌ Não foi possível gerar os pedidos do carrinho. Tente novamente mais tarde.",
+    });
+    return;
+  }
+
+  const pedidoIds = createdOrders.map((o) => o.pedido_id);
+  const totalUsdt = createdOrders
+    .reduce((acc, o) => acc + Number(o.total_usd), 0)
+    .toFixed(2);
+
+  // Armazena estado da conversa para aguardar TxID do lote
+  await supabase
+    .from("clientes")
+    .update({ estado_conversa: `aguardando_txid_cart:${pedidoIds.join(",")}` })
+    .eq("telegram_id", user.id);
+
+  const { data: configRow } = await supabase
+    .from("configuracoes")
+    .select("valor")
+    .eq("chave", "binance_id")
+    .maybeSingle();
+
+  const binanceUid = configRow?.valor || "1257797463";
+
+  let resumoItens = "";
+  for (const o of createdOrders) {
+    resumoItens += `• <b>${o.quantidade || 1}x</b> ${o.produto_nome} ($${Number(o.total_usd).toFixed(2)} USDT)\n`;
+  }
+
+  const text =
+    `🧾 <b>FATURA DO CARRINHO (${createdOrders.length} PRODUTOS)</b>\n\n` +
+    `📦 <b>Itens Inclusos no Pedido:</b>\n` +
+    `${resumoItens}\n` +
+    `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
+    `═══════════════════════════\n` +
+    `📱 <b>DADOS DE PAGAMENTO (BINANCE)</b>\n` +
+    `═══════════════════════════\n` +
+    `🆔 <b>Binance UID de Destino:</b>\n` +
+    `<code>${binanceUid}</code>\n` +
+    `<i>(Toque no número acima para copiar automaticamente)</i>\n\n` +
+    `💵 <b>Moeda:</b> USDT\n` +
+    `🏷️ <b>Valor Exato:</b> <code>${totalUsdt}</code> USDT\n\n` +
+    `<b>Como transferir no app da Binance:</b>\n` +
+    `1. Abra o app <b>Binance</b> no celular\n` +
+    `2. Toque em <b>Pagar / Pay</b> (ou Carteira > Enviar > Enviar por ID)\n` +
+    `3. Cole o UID: <code>${binanceUid}</code>\n` +
+    `4. Digite o valor exato: <b>${totalUsdt} USDT</b>\n` +
+    `5. Conclua a transferência (0% de taxa)\n` +
+    `6. Copie o <b>ID da Transação / Ordem</b> gerado no comprovante\n\n` +
+    `═══════════════════════════\n` +
+    `⚡ <b>ENTREGA 100% AUTOMÁTICA</b>\n` +
+    `═══════════════════════════\n` +
+    `Assim que concluir o envio na Binance, clique no botão verde abaixo e envie o código. Todos os ${createdOrders.length} produtos serão entregues juntos <b>na hora</b> aqui nesta conversa!`;
+
+  await telegram.sendMessage({
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "⚡ Já transferi! Informar ID da Transação",
+            callback_data: "informar_txid_cart",
+          },
+        ],
+        [
+          {
+            text: "❌ Cancelar",
+            callback_data: "cancelar_cart",
+          },
+        ],
+      ],
+    },
   });
 }
 
@@ -885,19 +1441,19 @@ async function renderHighlights(
   const buttons: { text: string; callback_data: string }[][] = destaques.map((p) => [
     {
       text: `${p.emoji || "🔥"} ${p.nome.length > 28 ? p.nome.slice(0, 26) + "…" : p.nome} — $${Number(p.preco_venda_usd).toFixed(2)} USDT`,
-      callback_data: `prod_${p.id}`,
+      callback_data: `prod_${p.id}_1`,
     },
   ]);
 
   buttons.push([
     { text: "📁 Ver Categorias", callback_data: "browse_cat" },
-    { text: "🔍 Buscar Produto", callback_data: "prompt_search" },
+    { text: "🛒 Meu Carrinho", callback_data: "view_cart" },
   ]);
 
   const text =
     `🔥 <b>Produtos Mais Vendidos & Destaques</b>\n\n` +
-    `Confira os produtos mais populares da nossa loja com preços imperdíveis em USDT e entrega imediata no chat:\n\n` +
-    `<i>Toque em qualquer item para ver detalhes e comprar:</i>`;
+    `Confira os produtos mais procurados da nossa loja com preços imperdíveis em USDT e entrega imediata no chat:\n\n` +
+    `<i>Toque em qualquer item para ver detalhes, escolher a quantidade e comprar:</i>`;
 
   await sendOrEdit(telegram, chatId, messageId, text, { inline_keyboard: buttons });
 }
@@ -940,7 +1496,7 @@ async function renderSearchResults(
   const buttons = produtos.map((p) => [
     {
       text: `${p.emoji || "🔍"} ${p.nome.length > 28 ? p.nome.slice(0, 26) + "…" : p.nome} — $${Number(p.preco_venda_usd).toFixed(2)} USDT`,
-      callback_data: `prod_${p.id}`,
+      callback_data: `prod_${p.id}_1`,
     },
   ]);
 
@@ -951,29 +1507,31 @@ async function renderSearchResults(
 
   await telegram.sendMessage({
     chat_id: chatId,
-    text: `🔍 <b>Encontramos ${produtos.length} produto(s) para "${termoLimpo}":</b>\n\nToque no item desejado para comprar:`,
+    text: `🔍 <b>Encontramos ${produtos.length} produto(s) para "${termoLimpo}":</b>\n\nToque no item desejado para comprar ou ajustar quantidade:`,
     parse_mode: "HTML",
     reply_markup: { inline_keyboard: buttons },
   });
 }
 
 /**
- * Inicia o checkout gerando pedido atômico e enviando a fatura com Binance UID
+ * Inicia o checkout gerando pedido atômico para uma quantidade específica
  */
 async function initiateCheckout(
   telegram: TelegramBotClient,
   orderService: OrderService,
   chatId: number,
   user: any,
-  produtoId: string
+  produtoId: string,
+  quantidade: number = 1
 ) {
   try {
+    const qty = Math.max(1, Math.min(100, Math.floor(quantidade) || 1));
     const orderData = await orderService.createOrder({
       telegramId: user.id,
       username: user.username,
       firstName: user.first_name,
       produtoId,
-      quantidade: 1,
+      quantidade: qty,
       metodoPagamento: "binance_id",
     });
 
@@ -986,11 +1544,14 @@ async function initiateCheckout(
 
     const binanceUid = configRow?.valor || "1257797463";
     const totalUsdt = Number(orderData.total_usd).toFixed(2);
+    const precoUnitario = (Number(orderData.total_usd) / qty).toFixed(2);
 
     const text =
       `🧾 <b>FATURA DO PEDIDO: ${orderData.referencia_unica}</b>\n\n` +
       `📦 <b>Produto:</b> ${orderData.produto_nome}\n` +
-      `💰 <b>Valor a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
+      `🔢 <b>Quantidade:</b> <b>${qty} unidade(s)</b>\n` +
+      `💵 <b>Preço Unitário:</b> $${precoUnitario} USDT\n` +
+      `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
       `═══════════════════════════\n` +
       `📱 <b>DADOS DE PAGAMENTO (BINANCE)</b>\n` +
       `═══════════════════════════\n` +
@@ -1009,7 +1570,7 @@ async function initiateCheckout(
       `═══════════════════════════\n` +
       `⚡ <b>ENTREGA 100% AUTOMÁTICA</b>\n` +
       `═══════════════════════════\n` +
-      `Assim que você transferir, toque no botão verde abaixo e envie o ID da transação. Seus dados de acesso serão enviados <b>na hora</b> aqui nesta conversa!`;
+      `Assim que você transferir, toque no botão verde abaixo e envie o ID da transação. Seus ${qty} acesso(s) serão enviados <b>na hora</b> aqui nesta conversa!`;
 
     await telegram.sendMessage({
       chat_id: chatId,
@@ -1104,11 +1665,12 @@ async function renderUserOrders(
 
     const prodNome = p.produto?.nome || "Produto Digital";
     const prodEmoji = p.produto?.emoji || "🔹";
+    const qtd = p.quantidade || 1;
 
-    text += `${prodEmoji} <b>${prodNome}</b>\n`;
+    text += `${prodEmoji} <b>${prodNome}</b> (${qtd}x)\n`;
     text += `• <b>Ref:</b> <code>${p.referencia_unica}</code>\n`;
     text += `• <b>Status:</b> ${statusIcon}\n`;
-    text += `• <b>Valor:</b> $${Number(p.total_usd).toFixed(2)} USDT\n`;
+    text += `• <b>Total:</b> $${Number(p.total_usd).toFixed(2)} USDT\n`;
     text += `• <b>Data:</b> ${dataFormatada}\n`;
 
     if (p.conteudo_entregue && p.status_entrega === "entregue") {
@@ -1120,6 +1682,7 @@ async function renderUserOrders(
   await sendOrEdit(telegram, chatId, messageId, text, {
     inline_keyboard: [
       [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
+      [{ text: "🛒 Meu Carrinho", callback_data: "view_cart" }],
       [{ text: "🗣️ Suporte", callback_data: "support" }],
     ],
   });

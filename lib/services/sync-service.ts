@@ -132,7 +132,8 @@ export class SyncService {
 
     let remoteProducts: VenteBotProduct[] = [];
     try {
-      remoteProducts = await this.ventebot.getProducts();
+      const prods = await this.ventebot.getProducts();
+      remoteProducts = Array.isArray(prods) ? prods : [];
     } catch (err) {
       return {
         success: false,

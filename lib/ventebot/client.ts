@@ -239,10 +239,20 @@ export class VenteBotClient implements SupplierProvider {
    * GET /api/reseller/products - Lista todos os produtos ativos do catálogo oficial
    */
   async getProducts(): Promise<VenteBotProduct[]> {
-    const res = await this.request<VenteBotProduct[]>("/api/reseller/products", {
+    const res = await this.request<any>("/api/reseller/products", {
       acao: "sync_products",
     });
-    return res;
+
+    if (Array.isArray(res)) {
+      return res;
+    }
+    if (res && Array.isArray(res.products)) {
+      return res.products;
+    }
+    if (res && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
   }
 
   /**
@@ -317,11 +327,22 @@ export class VenteBotClient implements SupplierProvider {
    * GET /api/reseller/wallet/transactions - Histórico de transações da carteira do fornecedor
    */
   async getWalletTransactions(): Promise<VenteBotWalletTransaction[]> {
-    return await this.request<VenteBotWalletTransaction[]>(
+    const res = await this.request<any>(
       "/api/reseller/wallet/transactions",
       {
         acao: "wallet_transactions",
       }
     );
+
+    if (Array.isArray(res)) {
+      return res;
+    }
+    if (res && Array.isArray(res.transactions)) {
+      return res.transactions;
+    }
+    if (res && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
   }
 }

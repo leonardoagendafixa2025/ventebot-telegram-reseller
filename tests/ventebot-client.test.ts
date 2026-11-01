@@ -41,6 +41,30 @@ describe("VenteBotClient - Integração com Fornecedor Oficial", () => {
     );
   });
 
+  it("deve desempacotar produtos quando a API retornar { success: true, products: [...] }", async () => {
+    const mockProductsResponse = {
+      success: true,
+      products: [
+        { id: 1, name: "Produto 1", price_usd: 10, stock: 5 },
+        { id: 2, name: "Produto 2", price_usd: 20, stock: 0 },
+      ],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify(mockProductsResponse),
+    });
+
+    const client = new VenteBotClient("minha_chave_secreta", "https://api.test.com");
+    const prods = await client.getProducts();
+
+    expect(Array.isArray(prods)).toBe(true);
+    expect(prods.length).toBe(2);
+    expect(prods[0].name).toBe("Produto 1");
+  });
+
   it("deve impedir criação de pedido sem retries cegos quando fornecedor falha", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,

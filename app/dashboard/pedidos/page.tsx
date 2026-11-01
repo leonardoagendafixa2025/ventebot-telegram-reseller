@@ -29,21 +29,21 @@ export default async function PedidosPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-            <ShoppingBag className="h-6 w-6 text-indigo-400" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <ShoppingBag className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400" />
             <span>Gerenciamento de Pedidos</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Acompanhamento em tempo real de pagamentos e fulfillment junto à VenteBot.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/dashboard/pedidos"
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-colors ${
               !status ? "bg-indigo-600 text-white" : "bg-white/[0.05] text-slate-400 hover:text-white"
             }`}
           >
@@ -51,7 +51,7 @@ export default async function PedidosPage({
           </Link>
           <Link
             href="/dashboard/pedidos?status=pago"
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-colors ${
               status === "pago"
                 ? "bg-emerald-600 text-white"
                 : "bg-white/[0.05] text-slate-400 hover:text-white"
@@ -61,7 +61,7 @@ export default async function PedidosPage({
           </Link>
           <Link
             href="/dashboard/pedidos?status=pendente"
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-colors ${
               status === "pendente"
                 ? "bg-amber-600 text-white"
                 : "bg-white/[0.05] text-slate-400 hover:text-white"
@@ -74,7 +74,7 @@ export default async function PedidosPage({
 
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[850px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Ref. Única</th>

@@ -21,21 +21,21 @@ export default async function LogsPage() {
     .limit(20);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <FileText className="h-6 w-6 text-indigo-400" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400" />
           <span>Auditoria & Logs de Integração</span>
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
           Trilha de auditoria das chamadas à VenteBot Reseller API e ações executadas por administradores.
         </p>
       </div>
 
       {/* Tabela de Eventos da VenteBot */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-        <div className="p-6 border-b border-white/[0.06]">
-          <h3 className="font-semibold text-white text-base">
+        <div className="p-4 sm:p-6 border-b border-white/[0.06]">
+          <h3 className="font-semibold text-white text-sm sm:text-base">
             Eventos da VenteBot Reseller API (Sanitizados)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -44,7 +44,7 @@ export default async function LogsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[650px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Ação</th>
@@ -111,8 +111,8 @@ export default async function LogsPage() {
 
       {/* Tabela de Auditoria Administrativa */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-        <div className="p-6 border-b border-white/[0.06]">
-          <h3 className="font-semibold text-white text-base">
+        <div className="p-4 sm:p-6 border-b border-white/[0.06]">
+          <h3 className="font-semibold text-white text-sm sm:text-base">
             Logs de Auditoria Administrativa
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -121,7 +121,7 @@ export default async function LogsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[500px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Ação</th>

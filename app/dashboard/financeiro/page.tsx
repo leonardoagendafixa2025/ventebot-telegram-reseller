@@ -39,22 +39,22 @@ export default async function FinanceiroPage() {
     .limit(30);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <DollarSign className="h-6 w-6 text-emerald-400" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400" />
           <span>Gestão Financeira & Margem</span>
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Demonstrativo de receitas em Telegram Stars, custos debitados pelo fornecedor e lucro líquido.
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
+          Demonstrativo de receitas em Binance USDT / Stars, custos do fornecedor e lucro líquido.
         </p>
       </div>
 
       {/* Cards Financeiros */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07]">
           <span className="text-xs font-medium text-slate-400">Receita Bruta Recebida</span>
-          <h2 className="text-2xl font-bold text-white mt-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mt-2">
             ${receitaBrutaUsd.toFixed(2)}{" "}
             <span className="text-xs font-normal text-slate-400">USD</span>
           </h2>
@@ -63,9 +63,9 @@ export default async function FinanceiroPage() {
           </p>
         </div>
 
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07]">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07]">
           <span className="text-xs font-medium text-slate-400">Custo Total VenteBot</span>
-          <h2 className="text-2xl font-bold text-slate-200 mt-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-200 mt-2">
             ${custoFornecedorUsd.toFixed(2)}{" "}
             <span className="text-xs font-normal text-slate-400">USD</span>
           </h2>
@@ -74,9 +74,9 @@ export default async function FinanceiroPage() {
           </p>
         </div>
 
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07]">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07]">
           <span className="text-xs font-medium text-slate-400">Lucro Líquido Estimado</span>
-          <h2 className="text-2xl font-bold text-emerald-400 mt-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-emerald-400 mt-2">
             ${lucroEstimadoUsd.toFixed(2)}{" "}
             <span className="text-xs font-normal text-emerald-300/70">USD</span>
           </h2>
@@ -85,9 +85,9 @@ export default async function FinanceiroPage() {
           </p>
         </div>
 
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07]">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07]">
           <span className="text-xs font-medium text-slate-400">Pagamentos Validados</span>
-          <h2 className="text-2xl font-bold text-white mt-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mt-2">
             {pagamentos?.length || 0}
           </h2>
           <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
@@ -99,17 +99,17 @@ export default async function FinanceiroPage() {
 
       {/* Livro-Razão de Pagamentos Oficiais */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-        <div className="p-6 border-b border-white/[0.06]">
-          <h3 className="font-semibold text-white text-base">
+        <div className="p-4 sm:p-6 border-b border-white/[0.06]">
+          <h3 className="font-semibold text-white text-sm sm:text-base">
             Registro Oficial de Pagamentos (Trilha de Auditoria)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Transações com ID oficial assinado pelo Telegram Stars
+            Transações com ID oficial assinado pelo Telegram Stars / Binance
           </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[650px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Ref. Pedido</th>

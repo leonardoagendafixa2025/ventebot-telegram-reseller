@@ -78,25 +78,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070812] flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-[#070812] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       {/* Decorative background glows */}
-      <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/3 w-96 h-96 bg-violet-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/4 left-1/3 w-72 sm:w-96 h-72 sm:h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/3 w-72 sm:w-96 h-72 sm:h-96 bg-violet-600/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-500/25 mb-4">
-            <ShieldCheck className="h-7 w-7 text-white" />
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="inline-flex items-center justify-center h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-500/25 mb-3 sm:mb-4">
+            <ShieldCheck className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
             VenteBot Reseller Admin
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Painel Administrativo Privado e Autônomo
           </p>
         </div>
 
-        <div className="glass-panel rounded-2xl p-7 shadow-2xl shadow-black/50 border border-white/[0.08]">
+        <div className="glass-panel rounded-2xl p-5 sm:p-7 shadow-2xl shadow-black/50 border border-white/[0.08]">
           {!showBootstrap ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
@@ -104,14 +104,14 @@ export default function LoginPage() {
                   Email do Administrador
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                  <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="admin@seudominio.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                    className="w-full pl-10 pr-4 py-3 sm:py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                   />
                 </div>
               </div>
@@ -121,14 +121,14 @@ export default function LoginPage() {
                   Senha
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                  <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
                   <input
                     type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                    className="w-full pl-10 pr-4 py-3 sm:py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                   />
                 </div>
               </div>
@@ -155,14 +155,14 @@ export default function LoginPage() {
                   Chave Secreta de Bootstrap
                 </label>
                 <div className="relative">
-                  <KeyRound className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                  <KeyRound className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
                   <input
                     type="password"
                     required
                     value={bootstrapSecret}
                     onChange={(e) => setBootstrapSecret(e.target.value)}
                     placeholder="ADMIN_BOOTSTRAP_SECRET"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full pl-10 pr-4 py-3 sm:py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
@@ -177,7 +177,7 @@ export default function LoginPage() {
                   value={bootstrapEmail}
                   onChange={(e) => setBootstrapEmail(e.target.value)}
                   placeholder="admin@seusite.com"
-                  className="w-full px-4 py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-3 sm:py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -191,7 +191,7 @@ export default function LoginPage() {
                   value={bootstrapPassword}
                   onChange={(e) => setBootstrapPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-3 sm:py-2.5 bg-slate-900/60 border border-white/[0.09] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -205,7 +205,7 @@ export default function LoginPage() {
             </form>
           )}
 
-          <div className="mt-6 pt-5 border-t border-white/[0.06] text-center">
+          <div className="mt-5 sm:mt-6 pt-4 sm:pt-5 border-t border-white/[0.06] text-center">
             <button
               type="button"
               onClick={() => setShowBootstrap(!showBootstrap)}
@@ -218,7 +218,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-slate-600 mt-6">
+        <p className="text-center text-xs text-slate-600 mt-5 sm:mt-6">
           Acesso restrito exclusivamente a administradores autorizados.
         </p>
       </div>

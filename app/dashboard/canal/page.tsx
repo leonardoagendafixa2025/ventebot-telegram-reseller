@@ -116,17 +116,17 @@ export default async function CanalPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <Radio className="h-6 w-6 text-indigo-400" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <Radio className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400" />
           <span>Canal de Transmissão Telegram</span>
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
           Publique ofertas manuais ou deixe o robô notificar novos produtos e reposições de estoque automaticamente.
         </p>
       </div>
 
       {sucesso && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
+        <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>
             <b>Operação concluída com sucesso!</b>{" "}
@@ -136,19 +136,19 @@ export default async function CanalPage({
       )}
 
       {erro && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+        <div className="p-3.5 sm:p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span><b>Erro:</b> {erro}</span>
         </div>
       )}
 
       {/* Card do Piloto Automático */}
-      <div className="glass-panel rounded-2xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/30 to-purple-950/30">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-indigo-400" />
-              <h2 className="text-base font-semibold text-white">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/30 to-purple-950/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Bot className="h-5 w-5 text-indigo-400 shrink-0" />
+              <h2 className="text-sm sm:text-base font-semibold text-white">
                 Piloto Automático de Produtos Novos & Estoque
               </h2>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -157,14 +157,14 @@ export default async function CanalPage({
               </span>
             </div>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              O sistema monitora a API oficial da VenteBot a cada 2 horas. Sempre que um <b>novo produto</b> for lançado ou houver <b>reposição de estoque</b>, ele envia a notificação no grupo <code className="text-indigo-300">{channelId}</code> com botão de compra direta!
+              O sistema monitora a API oficial da VenteBot a cada 2 horas. Sempre que um <b>novo produto</b> for lançado ou houver <b>reposição de estoque</b>, ele envia a notificação no grupo <code className="text-indigo-300 break-all">{channelId}</code> com botão de compra direta!
             </p>
           </div>
 
-          <form action={runAutoSyncBroadcast} className="shrink-0">
+          <form action={runAutoSyncBroadcast} className="w-full sm:w-auto shrink-0">
             <button
               type="submit"
-              className="w-full md:w-auto px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-4 py-3 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
             >
               <Sparkles className="h-4 w-4 text-amber-300" />
               <span>Sincronizar & Disparar Alerta Agora</span>
@@ -173,17 +173,17 @@ export default async function CanalPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         {/* Formulário de Envio Manual */}
-        <div className="glass-panel rounded-2xl p-6 border border-white/[0.08] h-fit">
-          <h2 className="text-base font-semibold text-white mb-2 flex items-center gap-2">
+        <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08] h-fit">
+          <h2 className="text-sm sm:text-base font-semibold text-white mb-2 flex items-center gap-2">
             <Send className="h-4 w-4 text-indigo-400" />
             <span>Publicar Oferta Manual no Canal</span>
           </h2>
 
           <div className="mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <p className="text-xs text-slate-400">Canal configurado:</p>
-            <p className="text-xs font-mono font-semibold text-indigo-300 mt-0.5">
+            <p className="text-xs font-mono font-semibold text-indigo-300 mt-0.5 break-all">
               {channelId}
             </p>
           </div>
@@ -196,7 +196,7 @@ export default async function CanalPage({
               <select
                 name="produto_id"
                 required
-                className="w-full px-3.5 py-2 bg-slate-900 border border-white/[0.1] rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-white/[0.1] rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 {produtos && produtos.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -212,7 +212,7 @@ export default async function CanalPage({
               </label>
               <select
                 name="tipo"
-                className="w-full px-3.5 py-2 bg-slate-900 border border-white/[0.1] rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-white/[0.1] rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="oferta">🔥 Oferta em Destaque</option>
                 <option value="restock">⚡ Reposição de Estoque</option>
@@ -228,13 +228,13 @@ export default async function CanalPage({
                 name="mensagem"
                 rows={3}
                 placeholder="Ex: Acabamos de repor contas com 30 dias de garantia!"
-                className="w-full px-3.5 py-2 bg-slate-900 border border-white/[0.1] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-white/[0.1] rounded-xl text-base sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
+              className="w-full py-3 sm:py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
             >
               <Send className="h-4 w-4" />
               <span>Disparar para o Canal</span>
@@ -244,9 +244,9 @@ export default async function CanalPage({
 
         {/* Histórico de Publicações */}
         <div className="glass-panel rounded-2xl border border-white/[0.08] lg:col-span-2 overflow-hidden flex flex-col">
-          <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+          <div className="p-4 sm:p-6 border-b border-white/[0.06] flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white">
+              <h2 className="text-sm sm:text-base font-semibold text-white">
                 Histórico de Transmissões
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -255,45 +255,47 @@ export default async function CanalPage({
             </div>
           </div>
 
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-3.5">Tipo</th>
-                <th className="px-6 py-3.5">Produto</th>
-                <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5">Data / Hora</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {publicacoes && publicacoes.length > 0 ? (
-                publicacoes.map((pub: any) => (
-                  <tr key={pub.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-6 py-4 text-xs font-medium text-slate-300 capitalize">
-                      {pub.tipo === "novo_produto" ? "🚀 Novo Produto" : pub.tipo === "restock" ? "⚡ Reposição" : "🔥 Oferta"}
-                    </td>
-                    <td className="px-6 py-4 text-xs text-white">
-                      {pub.produto?.nome || "Geral"}
-                    </td>
-                    <td className="px-6 py-4 text-xs">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {pub.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-xs text-slate-400">
-                      {new Date(pub.created_at).toLocaleString("pt-BR")}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[480px]">
+              <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 sm:px-6 py-3.5">Tipo</th>
+                  <th className="px-4 sm:px-6 py-3.5">Produto</th>
+                  <th className="px-4 sm:px-6 py-3.5">Status</th>
+                  <th className="px-4 sm:px-6 py-3.5">Data / Hora</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {publicacoes && publicacoes.length > 0 ? (
+                  publicacoes.map((pub: any) => (
+                    <tr key={pub.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 sm:px-6 py-3.5 text-xs font-medium text-slate-300 capitalize">
+                        {pub.tipo === "novo_produto" ? "🚀 Novo Produto" : pub.tipo === "restock" ? "⚡ Reposição" : "🔥 Oferta"}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-xs text-white">
+                        {pub.produto?.nome || "Geral"}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-xs">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <CheckCircle2 className="h-3 w-3" />
+                          {pub.status}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-xs text-slate-400 whitespace-nowrap">
+                        {new Date(pub.created_at).toLocaleString("pt-BR")}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 sm:px-6 py-8 text-center text-slate-500 text-xs">
+                      Nenhuma transmissão realizada ainda.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-slate-500 text-xs">
-                    Nenhuma transmissão realizada ainda.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

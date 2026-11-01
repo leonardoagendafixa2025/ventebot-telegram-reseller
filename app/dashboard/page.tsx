@@ -75,29 +75,29 @@ export default async function DashboardPage() {
   const ventebotConfigurada = Boolean(process.env.VENTEBOT_RESELLER_KEY);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Top Banner / Boas-vindas */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
             Visão Geral das Vendas
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
             Métricas de desempenho, faturamento em tempo real e status da revenda.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Link
             href="/dashboard/integracoes/ventebot"
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium bg-violet-600/10 text-violet-300 border border-violet-500/20 hover:bg-violet-600/20 transition-all"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-violet-600/10 text-violet-300 border border-violet-500/20 hover:bg-violet-600/20 transition-all"
           >
             <Plug className="h-3.5 w-3.5" />
             <span>Testar VenteBot API</span>
           </Link>
           <Link
             href="/dashboard/produtos"
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition-all shadow-md shadow-indigo-600/20"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition-all shadow-md shadow-indigo-600/20"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             <span>Gerenciar Catálogo</span>
@@ -106,17 +106,17 @@ export default async function DashboardPage() {
       </div>
 
       {/* Cards de Métricas Principais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {/* Receita Bruta */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07] relative overflow-hidden">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07] relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Receita Bruta</span>
             <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <h2 className="text-2xl font-bold text-white">
+          <div className="mt-3 sm:mt-4">
+            <h2 className="text-xl sm:text-2xl font-bold text-white">
               ${receitaTotal.toFixed(2)}{" "}
               <span className="text-xs font-normal text-slate-400">USD</span>
             </h2>
@@ -127,15 +127,15 @@ export default async function DashboardPage() {
         </div>
 
         {/* Lucro Líquido / Margem */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07] relative overflow-hidden">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07] relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Margem Estimada</span>
             <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <h2 className="text-2xl font-bold text-emerald-400">
+          <div className="mt-3 sm:mt-4">
+            <h2 className="text-xl sm:text-2xl font-bold text-emerald-400">
               ${margemTotal.toFixed(2)}{" "}
               <span className="text-xs font-normal text-emerald-300/70">USD</span>
             </h2>
@@ -146,15 +146,15 @@ export default async function DashboardPage() {
         </div>
 
         {/* Total de Pedidos */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07] relative overflow-hidden">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07] relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Total de Pedidos</span>
             <div className="h-9 w-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
               <ShoppingBag className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <h2 className="text-2xl font-bold text-white">{totalPedidos || 0}</h2>
+          <div className="mt-3 sm:mt-4">
+            <h2 className="text-xl sm:text-2xl font-bold text-white">{totalPedidos || 0}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-amber-400 font-medium">
                 {pedidosPendentes || 0} pendentes
@@ -164,15 +164,15 @@ export default async function DashboardPage() {
         </div>
 
         {/* Base de Clientes */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.07] relative overflow-hidden">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-white/[0.07] relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Clientes Telegram</span>
             <div className="h-9 w-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
               <Users className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <h2 className="text-2xl font-bold text-white">{totalClientes || 0}</h2>
+          <div className="mt-3 sm:mt-4">
+            <h2 className="text-xl sm:text-2xl font-bold text-white">{totalClientes || 0}</h2>
             <p className="text-xs text-slate-400 mt-1">
               {totalProdutosAtivos || 0} produtos ativos no bot
             </p>
@@ -181,30 +181,30 @@ export default async function DashboardPage() {
       </div>
 
       {/* Widget de Status da Integração VenteBot */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/[0.08]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="h-11 w-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 flex-shrink-0">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3 sm:gap-4">
+            <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 flex-shrink-0">
               <Plug className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-white text-base">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-semibold text-white text-sm sm:text-base">
                   VenteBot Reseller API v1.2
                 </h3>
                 {ventebotConfigurada ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                     Chave Configurada
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     <AlertCircle className="h-3 w-3" />
                     Chave Pendente
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                 Conexão direta com a carteira de revendedor do fornecedor (@storeBatmanBot).
                 Compras debitam automaticamente do saldo e entregam ao cliente do Telegram.
               </p>
@@ -213,7 +213,7 @@ export default async function DashboardPage() {
 
           <Link
             href="/dashboard/integracoes/ventebot"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium bg-white/[0.05] hover:bg-white/[0.08] text-white border border-white/[0.1] transition-all whitespace-nowrap self-start md:self-auto"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium bg-white/[0.05] hover:bg-white/[0.08] text-white border border-white/[0.1] transition-all whitespace-nowrap w-full sm:w-auto"
           >
             <span>Ver Status da Carteira</span>
             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -223,9 +223,9 @@ export default async function DashboardPage() {
 
       {/* Tabela de Pedidos Recentes */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-        <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+        <div className="p-4 sm:p-6 border-b border-white/[0.06] flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-white text-base">Pedidos Recentes</h3>
+            <h3 className="font-semibold text-white text-sm sm:text-base">Pedidos Recentes</h3>
             <p className="text-xs text-slate-400 mt-0.5">
               Últimas transações geradas pelo Bot do Telegram
             </p>
@@ -234,42 +234,42 @@ export default async function DashboardPage() {
             href="/dashboard/pedidos"
             className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
           >
-            Ver todos os pedidos →
+            Ver todos →
           </Link>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[650px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
-                <th className="px-6 py-3.5">Ref. / Pedido</th>
-                <th className="px-6 py-3.5">Cliente</th>
-                <th className="px-6 py-3.5">Produto</th>
-                <th className="px-6 py-3.5">Valor (Stars / USD)</th>
-                <th className="px-6 py-3.5">Pagamento</th>
-                <th className="px-6 py-3.5">Status Fornecedor</th>
-                <th className="px-6 py-3.5">Entrega</th>
+                <th className="px-4 sm:px-6 py-3.5">Ref. / Pedido</th>
+                <th className="px-4 sm:px-6 py-3.5">Cliente</th>
+                <th className="px-4 sm:px-6 py-3.5">Produto</th>
+                <th className="px-4 sm:px-6 py-3.5">Valor (Stars / USD)</th>
+                <th className="px-4 sm:px-6 py-3.5">Pagamento</th>
+                <th className="px-4 sm:px-6 py-3.5">Status Fornecedor</th>
+                <th className="px-4 sm:px-6 py-3.5">Entrega</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
               {ultimosPedidos && ultimosPedidos.length > 0 ? (
                 ultimosPedidos.map((ped: any) => (
                   <tr key={ped.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs text-slate-300">
+                    <td className="px-4 sm:px-6 py-3.5 font-mono text-xs text-slate-300">
                       {ped.referencia_unica}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-300">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs text-slate-300">
                       {ped.cliente?.username ? `@${ped.cliente.username}` : `ID: ${ped.cliente?.telegram_id}`}
                     </td>
-                    <td className="px-6 py-4 text-xs font-medium text-white flex items-center gap-1.5">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs font-medium text-white flex items-center gap-1.5">
                       <span>{ped.produto?.emoji || "📦"}</span>
                       <span>{ped.produto?.nome || "Produto Removido"}</span>
                     </td>
-                    <td className="px-6 py-4 text-xs">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs">
                       <span className="font-semibold text-indigo-400">{ped.total_stars} ⭐</span>{" "}
                       <span className="text-slate-500">(${Number(ped.total_usd).toFixed(2)})</span>
                     </td>
-                    <td className="px-6 py-4 text-xs">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs">
                       {ped.status_pagamento === "pago" ? (
                         <span className="inline-flex px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           Pago
@@ -280,10 +280,10 @@ export default async function DashboardPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-xs">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs">
                       <span className="text-slate-400">{ped.status_fornecedor}</span>
                     </td>
-                    <td className="px-6 py-4 text-xs">
+                    <td className="px-4 sm:px-6 py-3.5 text-xs">
                       {ped.status_entrega === "entregue" ? (
                         <span className="inline-flex px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           Entregue
@@ -302,7 +302,7 @@ export default async function DashboardPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500 text-xs">
+                  <td colSpan={7} className="px-4 sm:px-6 py-8 text-center text-slate-500 text-xs">
                     Nenhum pedido realizado ainda. Quando clientes comprarem no Bot, os pedidos aparecerão aqui em tempo real.
                   </td>
                 </tr>

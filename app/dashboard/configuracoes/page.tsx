@@ -93,28 +93,28 @@ export default async function ConfiguracoesPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <Settings className="h-6 w-6 text-indigo-400" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400" />
           <span>Configurações do Sistema</span>
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
           Gerenciamento do recebimento via Binance UID, webhook do Telegram e ambiente do servidor.
         </p>
       </div>
 
       {/* Configuração do Binance UID para Recebimento */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/[0.08]">
-        <h3 className="font-semibold text-white text-base mb-1 flex items-center gap-2">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08]">
+        <h3 className="font-semibold text-white text-sm sm:text-base mb-1 flex items-center gap-2">
           <Wallet className="h-4 w-4 text-emerald-400" />
           <span>Recebimento Automático via Binance UID</span>
         </h3>
-        <p className="text-xs text-slate-400 mb-6">
+        <p className="text-xs text-slate-400 mb-5 leading-relaxed">
           Os clientes realizam a transferência direta para o seu UID e a entrega digital é liberada 100% no automático assim que o ID de pagamento é informado.
         </p>
 
-        <form action={updateBinanceConfig} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <form action={updateBinanceConfig} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1">
               Seu Binance UID (Conta de Recebimento)
@@ -124,7 +124,7 @@ export default async function ConfiguracoesPage() {
               name="binance_id"
               defaultValue={currentBinanceId}
               required
-              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
+              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-base sm:text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
             />
           </div>
 
@@ -136,7 +136,7 @@ export default async function ConfiguracoesPage() {
               type="text"
               name="binance_nome_titular"
               defaultValue={currentTitular}
-              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-white focus:outline-none focus:border-emerald-500"
             />
           </div>
 
@@ -148,14 +148,14 @@ export default async function ConfiguracoesPage() {
               type="text"
               name="binance_moeda"
               defaultValue={currentMoeda}
-              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
+              className="w-full bg-slate-900/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-base sm:text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
             />
           </div>
 
-          <div className="md:col-span-3 flex justify-end">
+          <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
             <button
               type="submit"
-              className="py-2.5 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2"
+              className="w-full sm:w-auto py-3 sm:py-2.5 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
             >
               <Save className="h-3.5 w-3.5" />
               <span>Salvar Dados da Binance</span>
@@ -165,19 +165,19 @@ export default async function ConfiguracoesPage() {
       </div>
 
       {/* Ações Rápidas de Configuração do Telegram */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/[0.08]">
-        <h3 className="font-semibold text-white text-base mb-2 flex items-center gap-2">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08]">
+        <h3 className="font-semibold text-white text-sm sm:text-base mb-2 flex items-center gap-2">
           <Terminal className="h-4 w-4 text-indigo-400" />
           <span>Configuração Automática do Webhook do Telegram</span>
         </h3>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-400 mb-4 leading-relaxed">
           Registra o endpoint <code>/api/telegram/webhook</code> no Telegram com o segredo configurado e instala o menu de comandos oficial.
         </p>
 
         <form action={registerTelegramWebhook}>
           <button
             type="submit"
-            className="py-2.5 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center gap-2"
+            className="w-full sm:w-auto py-3 sm:py-2.5 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
             <span>Configurar / Renovar Webhook Oficial</span>
@@ -187,8 +187,8 @@ export default async function ConfiguracoesPage() {
 
       {/* Checklist de Variáveis de Ambiente */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
-        <div className="p-6 border-b border-white/[0.06]">
-          <h3 className="font-semibold text-white text-base">
+        <div className="p-4 sm:p-6 border-b border-white/[0.06]">
+          <h3 className="font-semibold text-white text-sm sm:text-base">
             Checklist de Variáveis de Ambiente (Servidor)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -200,23 +200,23 @@ export default async function ConfiguracoesPage() {
           {envStatus.map((item) => (
             <div
               key={item.name}
-              className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+              className="px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 hover:bg-white/[0.02] transition-colors"
             >
               <div>
-                <p className="font-mono text-xs font-semibold text-white">
+                <p className="font-mono text-xs font-semibold text-white break-all">
                   {item.name}
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>
               </div>
 
-              <div>
+              <div className="self-start sm:self-auto shrink-0">
                 {item.defined ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Configurada
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Ausente no .env
                   </span>

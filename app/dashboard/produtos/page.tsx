@@ -50,20 +50,20 @@ export default async function ProdutosPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-            <Package className="h-6 w-6 text-indigo-400" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <Package className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400" />
             <span>Gerenciamento de Produtos</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Controle preços de venda, margem de lucro em Stars/USD e disponibilidade no bot do Telegram.
           </p>
         </div>
 
         <Link
           href="/dashboard/integracoes/ventebot"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all self-start md:self-auto"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all w-full sm:w-auto"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span>Sincronizar com VenteBot</span>
@@ -73,7 +73,7 @@ export default async function ProdutosPage() {
       {/* Grid / Tabela de Produtos */}
       <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm min-w-[720px]">
             <thead className="bg-slate-900/60 text-xs text-slate-400 border-b border-white/[0.06] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Produto</th>

@@ -83,22 +83,22 @@ export default function VenteBotIntegrationPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <Plug className="h-6 w-6 text-violet-400" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <Plug className="h-5 w-5 sm:h-6 sm:w-6 text-violet-400" />
           <span>Integração Oficial VenteBot Reseller API</span>
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
           Gerenciamento e diagnóstico da conexão com o fornecedor oficial via <code>X-Reseller-Key</code>.
         </p>
       </div>
 
       {/* Ações e Diagnóstico Rápido */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
         {/* Testar Conexão */}
-        <div className="glass-panel rounded-2xl p-6 border border-white/[0.08] flex flex-col justify-between">
+        <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-violet-400">
@@ -106,8 +106,8 @@ export default function VenteBotIntegrationPage() {
               </span>
               <Activity className="h-4 w-4 text-violet-400" />
             </div>
-            <h3 className="text-base font-semibold text-white">Status da API & Saldo</h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <h3 className="text-sm sm:text-base font-semibold text-white">Status da API & Saldo</h3>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
               Executa uma chamada autenticada segura para <code>GET /api/reseller/me</code> medindo latência e saldo.
             </p>
           </div>
@@ -115,7 +115,7 @@ export default function VenteBotIntegrationPage() {
           <button
             onClick={handleTestConnection}
             disabled={testing}
-            className="mt-6 w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center gap-2 shadow-md shadow-violet-600/20 transition-all disabled:opacity-50"
+            className="mt-5 sm:mt-6 w-full py-3 sm:py-2.5 px-4 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center gap-2 shadow-md shadow-violet-600/20 transition-all disabled:opacity-50"
           >
             {testing ? (
               <>
@@ -132,7 +132,7 @@ export default function VenteBotIntegrationPage() {
         </div>
 
         {/* Sincronizar Produtos */}
-        <div className="glass-panel rounded-2xl p-6 border border-white/[0.08] flex flex-col justify-between">
+        <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
@@ -140,8 +140,8 @@ export default function VenteBotIntegrationPage() {
               </span>
               <Database className="h-4 w-4 text-indigo-400" />
             </div>
-            <h3 className="text-base font-semibold text-white">Sincronizar Catálogo</h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <h3 className="text-sm sm:text-base font-semibold text-white">Sincronizar Catálogo</h3>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
               Baixa produtos ativos, custos em USD e disponibilidade em <code>GET /api/reseller/products</code>.
             </p>
           </div>
@@ -149,7 +149,7 @@ export default function VenteBotIntegrationPage() {
           <button
             onClick={handleSyncCatalog}
             disabled={syncing}
-            className="mt-6 w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
+            className="mt-5 sm:mt-6 w-full py-3 sm:py-2.5 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
           >
             {syncing ? (
               <>
@@ -166,7 +166,7 @@ export default function VenteBotIntegrationPage() {
         </div>
 
         {/* Reconciliar Pedidos */}
-        <div className="glass-panel rounded-2xl p-6 border border-white/[0.08] flex flex-col justify-between">
+        <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-white/[0.08] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
@@ -174,8 +174,8 @@ export default function VenteBotIntegrationPage() {
               </span>
               <Wallet className="h-4 w-4 text-emerald-400" />
             </div>
-            <h3 className="text-base font-semibold text-white">Reconciliar Pedidos</h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <h3 className="text-sm sm:text-base font-semibold text-white">Reconciliar Pedidos</h3>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
               Verifica pedidos em ativação ou com status pendente e sincroniza entrega com a VenteBot.
             </p>
           </div>
@@ -183,7 +183,7 @@ export default function VenteBotIntegrationPage() {
           <button
             onClick={handleReconcile}
             disabled={reconciling}
-            className="mt-6 w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
+            className="mt-5 sm:mt-6 w-full py-3 sm:py-2.5 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
           >
             {reconciling ? (
               <>

@@ -127,10 +127,12 @@ export class TelegramBotClient {
   async setMyCommands() {
     return await this.callApi<boolean>("setMyCommands", {
       commands: [
-        { command: "start", description: "🏠 Menu principal e catálogo" },
-        { command: "products", description: "🛍️ Ver catálogo de produtos" },
-        { command: "orders", description: "📦 Meus pedidos e entregas" },
-        { command: "support", description: "🗣️ Atendimento e suporte" },
+        { command: "start", description: "Abrir Loja Digital e Inicio" },
+        { command: "loja", description: "Ver Catalogo de Produtos" },
+        { command: "destaques", description: "Mais Vendidos e Ofertas" },
+        { command: "buscar", description: "Pesquisar Produto por Nome" },
+        { command: "pedidos", description: "Meus Pedidos e Licencas" },
+        { command: "suporte", description: "Central de Atendimento" },
       ],
     });
   }

@@ -166,6 +166,94 @@ export async function POST(req: NextRequest) {
 
     if (!user) return NextResponse.json({ ok: true });
 
+    // 4.1 Verifica se o cliente está aguardando envio do ID da transação da Binance
+    const { data: clienteAtual } = await supabase
+      .from("clientes")
+      .select("id, estado_conversa")
+      .eq("telegram_id", user.id)
+      .maybeSingle();
+
+    if (clienteAtual?.estado_conversa?.startsWith("aguardando_txid:")) {
+      const pedidoId = clienteAtual.estado_conversa.replace("aguardando_txid:", "");
+
+      // Limpa estado da conversa
+      await supabase
+        .from("clientes")
+        .update({ estado_conversa: null })
+        .eq("telegram_id", user.id);
+
+      const txId = text.replace(/[^a-zA-Z0-9_-]/g, "").trim();
+
+      if (!txId || txId.length < 5) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `⚠️ <b>Código muito curto ou inválido.</b>\n\nPor favor, envie o ID da transação ou ordem gerado pela Binance. Clique abaixo para tentar novamente:`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⚡ Tentar Novamente", callback_data: `informar_txid_${pedidoId}` }],
+            ],
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Verificação Anti-Fraude (Anti-Replay): Garante que esse TxID nunca foi usado em outro pedido
+      const { data: pagamentoExistente } = await supabase
+        .from("pagamentos")
+        .select("id, pedido_id")
+        .eq("referencia_externa", txId)
+        .maybeSingle();
+
+      if (pagamentoExistente) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ <b>Este ID de transação já foi utilizado anteriormente.</b>\n\nCada compra requer uma transação única da Binance. Em caso de dúvidas, contate o suporte.`,
+          parse_mode: "HTML",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Notifica o cliente que a verificação e entrega estão ocorrendo
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `⏳ <b>Transação Binance recebida:</b> <code>${txId}</code>\n\nProcessando pagamento e liberando seu acesso 100% automático...`,
+        parse_mode: "HTML",
+      });
+
+      try {
+        await supabase
+          .from("pedidos")
+          .update({
+            binance_tx_id: txId,
+            comprovante_texto: text,
+          })
+          .eq("id", pedidoId);
+
+        // Confirmação atômica no banco + chamada ao fornecedor + entrega na conversa!
+        await orderService.handlePaymentConfirmation({
+          pedidoId,
+          provedor: "binance_id",
+          referenciaExterna: txId,
+          valorStars: 0,
+          payloadSeguro: {
+            binance_uid_destinatario: "1257797463",
+            binance_tx_id: txId,
+            data: new Date().toISOString(),
+          },
+        });
+      } catch (err: any) {
+        console.error("[Binance Checkout] Erro no processamento automático:", err);
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `⚠️ <b>Recebemos seu ID (<code>${txId}</code>)!</b>\n\nO sistema está finalizando a geração da sua licença com o fornecedor. Se demorar mais de 1 minuto, verifique em <b>Meus Pedidos</b> ou fale com o suporte.`,
+          parse_mode: "HTML",
+        });
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
     // Registra / atualiza cliente no banco
     await supabase.from("clientes").upsert(
       {
@@ -187,7 +275,7 @@ export async function POST(req: NextRequest) {
     if (text === "/start" || text === "🏠 Início") {
       await telegram.sendMessage({
         chat_id: chatId,
-        text: `👋 Olá, <b>${user.first_name || "Cliente"}</b>!\n\nBem-vindo à nossa loja digital oficial no Telegram!\nAqui você encontra produtos digitais com entrega automática e pagamento facilitado via <b>Telegram Stars</b> ⭐.\n\nEscolha uma opção no menu abaixo para começar:`,
+        text: `👋 Olá, <b>${user.first_name || "Cliente"}</b>!\n\nBem-vindo à nossa loja digital oficial no Telegram!\nAqui você encontra produtos digitais com entrega 100% automática e pagamento facilitado via <b>Binance UID (USDT)</b> ⚡.\n\nEscolha uma opção no menu abaixo para começar:`,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
@@ -220,16 +308,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (text === "👤 Minha conta") {
-      const { data: cliente } = await supabase
-        .from("clientes")
-        .select("saldo_carteira_stars, created_at")
-        .eq("telegram_id", user.id)
-        .maybeSingle();
-
-      const saldo = cliente?.saldo_carteira_stars || 0;
       await telegram.sendMessage({
         chat_id: chatId,
-        text: `👤 <b>Minha Conta</b>\n\n• ID Telegram: <code>${user.id}</code>\n• Usuário: @${user.username || "não informado"}\n• Saldo em Créditos: <b>${saldo} ⭐ Stars</b>\n\nPagamentos de compras digitais são processados diretamente com Telegram Stars na hora da confirmação.`,
+        text: `👤 <b>Minha Conta</b>\n\n• ID Telegram: <code>${user.id}</code>\n• Usuário: @${user.username || "não informado"}\n• Método de Pagamento: <b>Binance UID (USDT)</b>\n• Entrega: <b>100% Automática</b>\n\nTodas as suas compras contam com entrega imediata e suporte!`,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
@@ -272,6 +353,45 @@ export async function POST(req: NextRequest) {
     if (data.startsWith("buy_")) {
       const prodId = data.replace("buy_", "");
       await initiateCheckout(telegram, orderService, chatId, user, prodId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (data.startsWith("informar_txid_")) {
+      const pedidoId = data.replace("informar_txid_", "");
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin
+        .from("clientes")
+        .update({ estado_conversa: `aguardando_txid:${pedidoId}` })
+        .eq("telegram_id", user.id);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `🧾 <b>Confirmação de Pagamento Binance (Entrega 100% Automática)</b>\n\n` +
+          `Envie aqui no chat o <b>ID da Transação / Ordem</b> gerado no seu app da Binance após você transferir para o UID <code>1257797463</code>.\n\n` +
+          `<i>⚡ Assim que você digitar ou colar o código aqui, sua entrega será feita na hora automaticamente!</i>`,
+        parse_mode: "HTML",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (data.startsWith("cancelar_pedido_")) {
+      const pedidoId = data.replace("cancelar_pedido_", "");
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin
+        .from("pedidos")
+        .update({ status_pagamento: "cancelado" })
+        .eq("id", pedidoId)
+        .eq("status_pagamento", "pendente");
+
+      await supabaseAdmin
+        .from("clientes")
+        .update({ estado_conversa: null })
+        .eq("telegram_id", user.id);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: "❌ Pedido cancelado com sucesso. Para ver outros produtos, digite /products.",
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -353,7 +473,7 @@ async function renderProductsInCategory(
 
   const buttons = produtos.map((p) => [
     {
-      text: `${p.emoji || "🔹"} ${p.nome} — ${p.preco_venda_stars} ⭐`,
+      text: `${p.emoji || "🔹"} ${p.nome} — $${Number(p.preco_venda_usd).toFixed(2)} USDT`,
       callback_data: `prod_${p.id}`,
     },
   ]);
@@ -398,7 +518,8 @@ async function renderProductDetails(
   const estoqueTexto =
     prod.estoque_qtd !== null ? `📦 Estoque: ${prod.estoque_qtd} unidades` : "📦 Estoque: Disponível sob demanda";
 
-  const text = `${prod.emoji || "🛍️"} <b>${prod.nome}</b>\n\n${prod.descricao || "Sem descrição disponível."}\n\n<b>Preço:</b> ${prod.preco_venda_stars} ⭐ Telegram Stars (~$${prod.preco_venda_usd.toFixed(2)} USD)\n<b>Entrega:</b> ${entregaTexto}\n<b>Garantia:</b> ${prod.garantia_dias} dias\n${estoqueTexto}`;
+  const totalUsdt = Number(prod.preco_venda_usd).toFixed(2);
+  const text = `${prod.emoji || "🛍️"} <b>${prod.nome}</b>\n\n${prod.descricao || "Sem descrição disponível."}\n\n<b>Preço:</b> <b>$${totalUsdt} USDT</b>\n<b>Entrega:</b> ${entregaTexto}\n<b>Garantia:</b> ${prod.garantia_dias} dias\n${estoqueTexto}`;
 
   await telegram.sendMessage({
     chat_id: chatId,
@@ -406,7 +527,7 @@ async function renderProductDetails(
     parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
-        [{ text: `🛒 Comprar Agora (${prod.preco_venda_stars} ⭐)`, callback_data: `buy_${prod.id}` }],
+        [{ text: `🛒 Comprar por $${totalUsdt} USDT`, callback_data: `buy_${prod.id}` }],
         [{ text: "⬅️ Voltar às Categorias", callback_data: "browse_cat" }],
       ],
     },
@@ -421,30 +542,64 @@ async function initiateCheckout(
   produtoId: string
 ) {
   try {
-    // 1. Cria pedido com preço congelado
+    // 1. Cria pedido com preço congelado via Binance ID
     const orderData = await orderService.createOrder({
       telegramId: user.id,
       username: user.username,
       firstName: user.first_name,
       produtoId,
       quantidade: 1,
-      metodoPagamento: "telegram_stars",
+      metodoPagamento: "binance_id",
     });
 
-    // 2. Emite fatura oficial Telegram Stars (sendInvoice com XTR)
-    await telegram.sendInvoice({
+    const supabase = createAdminClient();
+    const { data: configRow } = await supabase
+      .from("configuracoes")
+      .select("valor")
+      .eq("chave", "binance_id")
+      .maybeSingle();
+
+    const binanceUid = configRow?.valor || "1257797463";
+    const totalUsdt = Number(orderData.total_usd).toFixed(2);
+
+    await telegram.sendMessage({
       chat_id: chatId,
-      title: orderData.produto_nome,
-      description: `Pedido ${orderData.referencia_unica} - Entrega digital automática`,
-      payload: `order_${orderData.pedido_id}`,
-      currency: "XTR",
-      prices: [
-        {
-          label: orderData.produto_nome.slice(0, 30),
-          amount: orderData.total_stars,
-        },
-      ],
-      start_parameter: `pay_${orderData.referencia_unica}`,
+      text: `🛒 <b>Fatura de Compra: ${orderData.produto_nome}</b>\n\n` +
+        `🔖 <b>Pedido:</b> <code>${orderData.referencia_unica}</code>\n` +
+        `📦 <b>Produto:</b> ${orderData.produto_nome}\n` +
+        `💰 <b>Valor a Pagar:</b> <b>${totalUsdt} USDT</b>\n\n` +
+        `═══════════════════════════\n` +
+        `📱 <b>DADOS DE PAGAMENTO (BINANCE UID)</b>\n` +
+        `═══════════════════════════\n` +
+        `🆔 <b>Binance UID de Destino:</b>\n` +
+        `<code>${binanceUid}</code> <i>(toque no número para copiar)</i>\n\n` +
+        `💵 <b>Moeda:</b> USDT\n\n` +
+        `<b>Instruções no App da Binance:</b>\n` +
+        `1. Abra seu aplicativo da <b>Binance</b>\n` +
+        `2. Vá em <b>Pagar</b> (ou Carteira > Enviar)\n` +
+        `3. Escolha <b>Enviar por ID / Binance UID</b>\n` +
+        `4. Cole o UID: <code>${binanceUid}</code>\n` +
+        `5. Digite o valor exato: <b>${totalUsdt} USDT</b>\n` +
+        `6. Conclua a transferência (0% de taxa!)\n\n` +
+        `⚡ <b>ENTREGA 100% AUTOMÁTICA:</b>\n` +
+        `Assim que concluir o envio, clique no botão abaixo para informar o ID da transação e seu produto será entregue na hora!`,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "⚡ Já transferi! Informar ID da Transação",
+              callback_data: `informar_txid_${orderData.pedido_id}`,
+            },
+          ],
+          [
+            {
+              text: "❌ Cancelar Pedido",
+              callback_data: `cancelar_pedido_${orderData.pedido_id}`,
+            },
+          ],
+        ],
+      },
     });
   } catch (err: any) {
     await telegram.sendMessage({
@@ -500,7 +655,7 @@ async function renderUserOrders(
         ? "⏳ Em processamento"
         : "⚠️ Pagamento pendente";
 
-    text += `🔹 <b>${p.produto?.nome || "Produto"}</b>\n• Ref: <code>${p.referencia_unica}</code>\n• Status: ${statusIcon}\n• Total: ${p.total_stars} ⭐ Stars\n• Data: ${dataFormatada}\n`;
+    text += `🔹 <b>${p.produto?.nome || "Produto"}</b>\n• Ref: <code>${p.referencia_unica}</code>\n• Status: ${statusIcon}\n• Total: $${Number(p.total_usd).toFixed(2)} USDT\n• Data: ${dataFormatada}\n`;
 
     if (p.conteudo_entregue && p.status_entrega === "entregue") {
       text += `• Conteúdo entregue:\n<pre>${p.conteudo_entregue}</pre>\n`;

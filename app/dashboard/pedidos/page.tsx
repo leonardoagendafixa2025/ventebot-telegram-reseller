@@ -106,15 +106,21 @@ export default async function PedidosPage({
                       <span className="text-slate-400">({ped.quantidade}x)</span>
                     </td>
                     <td className="px-6 py-4 text-xs">
-                      <span className="font-semibold text-indigo-400">{ped.total_stars} ⭐</span>{" "}
-                      <span className="text-slate-500">(${Number(ped.total_usd).toFixed(2)})</span>
+                      <span className="font-semibold text-emerald-400 font-mono">${Number(ped.total_usd).toFixed(2)} USDT</span>
                     </td>
                     <td className="px-6 py-4 text-xs">
                       {ped.status_pagamento === "pago" ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Pago
-                        </span>
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Pago (Auto)
+                          </span>
+                          {ped.binance_tx_id && (
+                            <p className="font-mono text-[10px] text-slate-400 truncate max-w-[120px]" title={ped.binance_tx_id}>
+                              Tx: {ped.binance_tx_id}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                           <Clock className="h-3 w-3" />

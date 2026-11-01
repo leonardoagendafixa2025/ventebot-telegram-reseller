@@ -471,7 +471,11 @@ export async function POST(req: NextRequest) {
     const messageId = cb.message?.message_id;
     const user = cb.from;
 
-    await telegram.answerCallbackQuery({ callback_query_id: cb.id });
+    try {
+      await telegram.answerCallbackQuery({ callback_query_id: cb.id });
+    } catch {
+      // Ignora expiração de callback query
+    }
     if (!chatId) return NextResponse.json({ ok: true });
 
     // Botão noop (ex: indicador de página)

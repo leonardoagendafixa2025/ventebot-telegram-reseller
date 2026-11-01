@@ -71,7 +71,12 @@ export class TelegramBotClient {
     text?: string;
     show_alert?: boolean;
   }) {
-    return await this.callApi<boolean>("answerCallbackQuery", params as Record<string, unknown>);
+    try {
+      return await this.callApi<boolean>("answerCallbackQuery", params as Record<string, unknown>);
+    } catch (e) {
+      // Callback query pode expirar após 30 segundos no Telegram
+      return false;
+    }
   }
 
   /**

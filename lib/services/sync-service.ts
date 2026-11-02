@@ -6,6 +6,7 @@ import { VenteBotProduct } from "@/lib/ventebot/types";
 export interface SyncCatalogOptions {
   broadcastAlerts?: boolean;
   forceFeaturedIfQuiet?: boolean;
+  forceBroadcastNow?: boolean;
 }
 
 export class SyncService {
@@ -48,29 +49,35 @@ export class SyncService {
     const precoUsdt = Number(params.produto.preco_venda_usd).toFixed(2);
     const emoji = params.produto.emoji || "📦";
 
-    let titulo = "🔥 <b>OFERTA EM DESTAQUE NO BOT!</b>";
-    let subtexto = "Aproveite esta ferramenta oficial com entrega imediata e suporte!";
+    let titulo = "🔥 <b>PRODUTO EM ESTOQUE / PRONTA ENTREGA!</b>";
+    let subtexto = "Item oficial disponível com liberação imediata e entrega 100% automática no nosso Bot!";
     let botaoTexto = "🛒 Comprar no Bot Agora";
 
     if (params.tipo === "novo_produto") {
       titulo = "🚀 <b>NOVO PRODUTO NO CATÁLOGO!</b>";
       subtexto = "Acabamos de cadastrar este produto com estoque oficial e entrega 100% automática!";
-      botaoTexto = "✨ Comprar no Bot";
+      botaoTexto = "✨ Comprar no Bot Agora";
     } else if (params.tipo === "restock") {
       titulo = "⚡ <b>REPOSIÇÃO DE ESTOQUE!</b>";
       subtexto = "Novas contas e licenças foram reabastecidas com liberação imediata no chat!";
-      botaoTexto = "⚡ Garantir o Meu";
+      botaoTexto = "⚡ Garantir no Bot Agora";
     }
 
     const desc = params.produto.descricao
       ? params.produto.descricao.trim()
       : subtexto;
 
+    const estoqueTexto =
+      params.produto.estoque_qtd !== undefined && params.produto.estoque_qtd !== null
+        ? `📦 <b>Estoque:</b> ${params.produto.estoque_qtd} unidades disponíveis\n`
+        : "";
+
     const text =
       `${titulo}\n\n` +
       `${emoji} <b>${params.produto.nome}</b>\n\n` +
       `${desc}\n\n` +
       `💰 <b>Preço:</b> <b>$${precoUsdt} USDT</b>\n` +
+      estoqueTexto +
       `🛡️ <b>Garantia:</b> ${params.produto.garantia_dias || 30} dias\n` +
       `⚡ <b>Entrega:</b> 100% Automática no chat\n\n` +
       `👇 <i>Toque no botão abaixo para garantir o seu no Bot:</i>`;
@@ -153,19 +160,27 @@ export class SyncService {
 
     const defaultCatId = categorias && categorias.length > 0 ? categorias[0].id : null;
 
+    // Otimização: Busca todos os produtos existentes em uma única consulta
+    const { data: existingProducts } = await supabase
+      .from("produtos")
+      .select("id, fornecedor_produto_id, nome, emoji, descricao, preco_venda_usd, preco_venda_stars, garantia_dias, estoque_qtd, ativo, destaque");
+
+    const existingMap = new Map<number, any>();
+    if (existingProducts) {
+      for (const item of existingProducts) {
+        if (item.fornecedor_produto_id !== null && item.fornecedor_produto_id !== undefined) {
+          existingMap.set(Number(item.fornecedor_produto_id), item);
+        }
+      }
+    }
+
     const newProductsList: any[] = [];
     const restockedList: any[] = [];
 
     for (const prod of remoteProducts) {
       try {
         const costUsd = Number(prod.price_usd) || 0;
-
-        // Verifica se o produto já existe no banco
-        const { data: existing } = await supabase
-          .from("produtos")
-          .select("id, nome, emoji, descricao, preco_venda_usd, preco_venda_stars, garantia_dias, estoque_qtd, ativo")
-          .eq("fornecedor_produto_id", prod.id)
-          .maybeSingle();
+        const existing = existingMap.get(Number(prod.id));
 
         if (existing) {
           const precoVendaUsd =
@@ -260,14 +275,14 @@ export class SyncService {
 
     if (shouldBroadcast) {
       try {
-        // Busca publicações recentes nas últimas 24 horas para evitar duplicidade
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
+        // Busca publicações recentes nas últimas 12 horas para evitar repetição do mesmo item
         const { data: recentPosts } = await supabase
           .from("publicacoes_canal")
           .select("produto_id, created_at")
-          .gte(
-            "created_at",
-            new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-          );
+          .gte("created_at", twelveHoursAgo)
+          .order("created_at", { ascending: false });
 
         const recentProdIds = new Set(
           (recentPosts || []).map((p) => p.produto_id).filter(Boolean)
@@ -297,27 +312,50 @@ export class SyncService {
           if (sent) broadcastsSent++;
         }
 
-        // 3. Se não houver novos produtos nem restocks e o grupo estiver silencioso há mais de 12 horas:
-        // Envia 1 oferta em destaque rotativa
-        if (
-          broadcastsSent === 0 &&
-          options?.forceFeaturedIfQuiet &&
-          (!recentPosts || recentPosts.length === 0)
-        ) {
-          const { data: featured } = await supabase
-            .from("produtos")
-            .select("id, nome, emoji, descricao, preco_venda_usd, garantia_dias")
-            .eq("ativo", true)
-            .order("preco_venda_usd", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+        // 3. SE NÃO HOUVE NOVO PRODUTO NEM REPOSIÇÃO:
+        // Piloto Automático de Produtos em Estoque!
+        // Envia uma notificação de produto ativo em estoque para manter o grupo dinâmico e aquecido
+        const lastPostAt =
+          recentPosts && recentPosts.length > 0
+            ? new Date(recentPosts[0].created_at).getTime()
+            : 0;
+        const minutesSinceLastPost = (Date.now() - lastPostAt) / (60 * 1000);
 
-          if (featured && !recentProdIds.has(featured.id)) {
-            const sent = await this.broadcastProductAlert({
-              tipo: "oferta",
-              produto: featured,
-            });
-            if (sent) broadcastsSent++;
+        // Dispara se o grupo estiver sem post há pelo menos 60 minutos, ou se solicitado forçar
+        const shouldPostInStock =
+          broadcastsSent === 0 &&
+          (minutesSinceLastPost >= 60 || options?.forceBroadcastNow || options?.forceFeaturedIfQuiet);
+
+        if (shouldPostInStock) {
+          // Busca produtos ativos com estoque positivo
+          const { data: inStockProducts } = await supabase
+            .from("produtos")
+            .select("id, nome, emoji, descricao, preco_venda_usd, garantia_dias, estoque_qtd, destaque")
+            .eq("ativo", true)
+            .gt("estoque_qtd", 0)
+            .order("destaque", { ascending: false });
+
+          if (inStockProducts && inStockProducts.length > 0) {
+            // Prioriza produtos com estoque que NÃO foram postados recentemente nas últimas 12 horas
+            const freshCandidates = inStockProducts.filter(
+              (p) => !recentProdIds.has(p.id)
+            );
+
+            let chosenProduct = null;
+            if (freshCandidates.length > 0) {
+              chosenProduct = freshCandidates[0];
+            } else {
+              // Se todos os 50+ itens já foram postados nas últimas 12h, escolhe aleatório entre os em estoque
+              chosenProduct = inStockProducts[Math.floor(Math.random() * inStockProducts.length)];
+            }
+
+            if (chosenProduct) {
+              const sent = await this.broadcastProductAlert({
+                tipo: "oferta",
+                produto: chosenProduct,
+              });
+              if (sent) broadcastsSent++;
+            }
           }
         }
       } catch (err) {

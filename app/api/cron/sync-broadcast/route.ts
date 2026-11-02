@@ -22,12 +22,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const forceFeatured = req.nextUrl.searchParams.get("force_featured") === "true";
+    const forceFeaturedParam = req.nextUrl.searchParams.get("force_featured");
+    const forceFeatured = forceFeaturedParam === null ? true : forceFeaturedParam === "true";
+    const forceBroadcastNow = req.nextUrl.searchParams.get("force_broadcast") === "true";
 
     const syncService = new SyncService();
     const result = await syncService.syncCatalog({
       broadcastAlerts: true,
       forceFeaturedIfQuiet: forceFeatured,
+      forceBroadcastNow: forceBroadcastNow,
     });
 
     return NextResponse.json({

@@ -104,6 +104,7 @@ export default async function CanalPage({
       const result = await syncService.syncCatalog({
         broadcastAlerts: true,
         forceFeaturedIfQuiet: true,
+        forceBroadcastNow: true,
       });
 
       revalidatePath("/dashboard/canal");

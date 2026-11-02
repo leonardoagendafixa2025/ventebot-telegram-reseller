@@ -321,10 +321,11 @@ export class SyncService {
             : 0;
         const minutesSinceLastPost = (Date.now() - lastPostAt) / (60 * 1000);
 
-        // Dispara se o grupo estiver sem post há pelo menos 60 minutos, ou se solicitado forçar
+        // Dispara se o grupo estiver sem post há pelo menos 45 minutos (ou se solicitado forçar imediatamente)
+        const isQuietGroup = minutesSinceLastPost >= 45;
         const shouldPostInStock =
           broadcastsSent === 0 &&
-          (minutesSinceLastPost >= 60 || options?.forceBroadcastNow || options?.forceFeaturedIfQuiet);
+          (options?.forceBroadcastNow || (options?.forceFeaturedIfQuiet && isQuietGroup));
 
         if (shouldPostInStock) {
           // Busca produtos ativos com estoque positivo

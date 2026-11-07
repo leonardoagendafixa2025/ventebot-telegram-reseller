@@ -10,7 +10,7 @@ const MAIN_REPLY_KEYBOARD = {
     [{ text: "🛍️ Ver Produtos" }, { text: "🛒 Meu Carrinho" }],
     [{ text: "🔥 Destaques" }, { text: "🔍 Buscar Produto" }],
     [{ text: "📦 Meus Pedidos" }, { text: "👤 Minha Conta" }],
-    [{ text: "🗣️ Suporte" }],
+    [{ text: "💰 Meu Saldo" }, { text: "🗣️ Suporte" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -540,6 +540,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // 4.13b Meu Saldo / Extrato
+    if (text === "💰 Meu Saldo" || text === "/saldo" || text === "/extrato") {
+      await renderUserBalance(telegram, chatId, user.id);
+      return NextResponse.json({ ok: true });
+    }
+
     // 4.14 Suporte
     if (text === "/support" || text === "/ajuda" || text === "/suporte" || text === "🗣️ Suporte") {
       await telegram.sendMessage({
@@ -577,6 +583,7 @@ export async function POST(req: NextRequest) {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
+            [{ text: "💰 Ver Meu Saldo / Extrato", callback_data: "my_balance" }],
             [{ text: "🛒 Ver Meu Carrinho", callback_data: "view_cart" }],
             [{ text: "📦 Consultar Meus Pedidos", callback_data: "my_orders" }],
             [{ text: "🛍️ Explorar Catálogo", callback_data: "browse_cat" }],
@@ -788,6 +795,12 @@ export async function POST(req: NextRequest) {
     // Ver meus pedidos
     if (data === "my_orders") {
       await renderUserOrders(telegram, chatId, user.id, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Ver saldo / extrato de compras
+    if (data === "my_balance") {
+      await renderUserBalance(telegram, chatId, user.id, messageId);
       return NextResponse.json({ ok: true });
     }
 
@@ -1684,6 +1697,92 @@ async function renderUserOrders(
       [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
       [{ text: "🛒 Meu Carrinho", callback_data: "view_cart" }],
       [{ text: "🗣️ Suporte", callback_data: "support" }],
+    ],
+  });
+}
+
+// ============================================================================
+// 💰 SALDO / EXTRATO DE COMPRAS DO CLIENTE
+// ============================================================================
+
+async function renderUserBalance(
+  telegram: TelegramBotClient,
+  chatId: number,
+  telegramId: number,
+  messageId?: number
+) {
+  const supabase = createAdminClient();
+
+  // Busca o cliente pelo telegram_id
+  const { data: cliente } = await supabase
+    .from("clientes")
+    .select("id")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+
+  if (!cliente) {
+    await sendOrEdit(
+      telegram,
+      chatId,
+      messageId,
+      "💰 <b>Meu Saldo / Extrato</b>\n\nVocê ainda não possui compras registradas.",
+      {
+        inline_keyboard: [
+          [{ text: "🛍️ Explorar Loja", callback_data: "browse_cat" }],
+        ],
+      }
+    );
+    return;
+  }
+
+  // Busca pedidos pagos com info do produto
+  const { data: pedidos } = await supabase
+    .from("pedidos")
+    .select("*, produto:produtos(nome, emoji)")
+    .eq("cliente_id", cliente.id)
+    .eq("status_pagamento", "pago")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const lista = pedidos || [];
+  const totalGasto = lista.reduce((acc, p) => acc + Number(p.total_usd || 0), 0);
+  const totalEntregues = lista.filter((p) => p.status_entrega === "entregue").length;
+  const totalPendentes = lista.filter(
+    (p) => p.status_entrega !== "entregue" && p.status_pagamento === "pago"
+  ).length;
+
+  let text =
+    `💰 <b>Meu Extrato de Compras</b>\n\n` +
+    `📊 <b>Resumo da Conta:</b>\n` +
+    `• <b>Total investido:</b> <b>$${totalGasto.toFixed(2)} USDT</b>\n` +
+    `• <b>Pedidos entregues:</b> ${totalEntregues}\n` +
+    (totalPendentes > 0 ? `• <b>Em processamento:</b> ${totalPendentes}\n` : ``) +
+    `\n`;
+
+  if (lista.length === 0) {
+    text += `<i>Nenhuma compra registrada ainda. Explore nosso catálogo!</i>`;
+  } else {
+    const exibir = lista.slice(0, 10);
+    text += `🧾 <b>Últimas compras (${exibir.length}):</b>\n\n`;
+    for (const p of exibir) {
+      const data = new Date(p.created_at).toLocaleDateString("pt-BR");
+      const statusIcon =
+        p.status_entrega === "entregue"
+          ? "✅"
+          : p.status_pagamento === "pago"
+          ? "⏳"
+          : "❌";
+      const emoji = (p.produto as { emoji?: string } | null)?.emoji || "📦";
+      const nome = ((p.produto as { nome?: string } | null)?.nome || "Produto Digital").slice(0, 30);
+      text += `${statusIcon} ${emoji} <b>${nome}</b> (${p.quantidade}x)\n`;
+      text += `   💵 $${Number(p.total_usd).toFixed(2)} USDT — ${data}\n\n`;
+    }
+  }
+
+  await sendOrEdit(telegram, chatId, messageId, text, {
+    inline_keyboard: [
+      [{ text: "📦 Ver Meus Pedidos Completos", callback_data: "my_orders" }],
+      [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
     ],
   });
 }

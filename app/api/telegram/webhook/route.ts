@@ -349,6 +349,88 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // 4.4b Cliente enviando TxID para recarga de saldo na carteira
+    if (clienteAtual?.estado_conversa?.startsWith("aguardando_recharge_txid:")) {
+      const amountUsd =
+        parseFloat(clienteAtual.estado_conversa.replace("aguardando_recharge_txid:", "")) || 5;
+      const stars = Math.round(amountUsd * 50);
+
+      await supabase
+        .from("clientes")
+        .update({ estado_conversa: null })
+        .eq("telegram_id", user.id);
+
+      const txId = text.replace(/[^a-zA-Z0-9_-]/g, "").trim();
+      if (!txId || txId.length < 5) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `⚠️ <b>Código muito curto ou inválido.</b>\nEnvie o ID numérico da transação gerado no app da Binance:`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⚡ Informar Novamente", callback_data: `informar_recharge_txid_${amountUsd}` }],
+              [{ text: "❌ Cancelar Recarga", callback_data: "my_balance" }],
+            ],
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Verificação Anti-Fraude (Anti-Replay)
+      const { data: pagamentoExistente } = await supabase
+        .from("pagamentos")
+        .select("id")
+        .eq("referencia_externa", txId)
+        .maybeSingle();
+
+      if (pagamentoExistente) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ <b>Este ID de transação já foi utilizado anteriormente.</b>\nCada recarga requer uma transação única da Binance.`,
+          parse_mode: "HTML",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Credita o saldo na carteira do cliente atomicamente
+      const { data: creditoRes, error: credErr } = await supabase.rpc(
+        "movimentar_carteira_atomicamente",
+        {
+          p_cliente_id: clienteAtual.id,
+          p_tipo: "credito",
+          p_valor_stars: stars,
+          p_descricao: `Recarga via Binance UID TxID: ${txId}`,
+        }
+      );
+
+      if (credErr || !creditoRes?.success) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ Erro ao creditar saldo: ${credErr?.message || "Tente novamente mais tarde."}`,
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const novoSaldoUsd = ((creditoRes.saldo_posterior || 0) / 50).toFixed(2);
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🎉 <b>Recarga Confirmada com Sucesso!</b>\n\n` +
+          `💵 <b>Valor Creditado:</b> +$${amountUsd.toFixed(2)} USDT (${stars} ⭐)\n` +
+          `💰 <b>Seu Novo Saldo:</b> <b>$${novoSaldoUsd} USDT</b> (${creditoRes.saldo_posterior} ⭐)\n` +
+          `🧾 <b>TxID Binance:</b> <code>${txId}</code>\n\n` +
+          `⚡ <i>Agora você pode comprar qualquer produto com 1 clique utilizando seu saldo!</i>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🛍️ Explorar Loja & Comprar", callback_data: "browse_cat" }],
+            [{ text: "💰 Ver Meu Saldo", callback_data: "my_balance" }],
+          ],
+        },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     // 4.5 Cliente enviando TxID de lote do carrinho (múltiplos itens)
     if (clienteAtual?.estado_conversa?.startsWith("aguardando_txid_cart:")) {
       const pedidoIdsStr = clienteAtual.estado_conversa.replace("aguardando_txid_cart:", "");
@@ -801,6 +883,244 @@ export async function POST(req: NextRequest) {
     // Ver saldo / extrato de compras
     if (data === "my_balance") {
       await renderUserBalance(telegram, chatId, user.id, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Exibir menu de recarga de saldo
+    if (data === "recharge_wallet") {
+      await renderRechargeMenu(telegram, chatId, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Pacote de recarga selecionado
+    if (data.startsWith("recharge_pkg_")) {
+      const amount = parseFloat(data.replace("recharge_pkg_", "")) || 5;
+      await renderRechargeInvoice(telegram, chatId, amount, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Informar TxID de recarga
+    if (data.startsWith("informar_recharge_txid_")) {
+      const amount = parseFloat(data.replace("informar_recharge_txid_", "")) || 5;
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin
+        .from("clientes")
+        .update({ estado_conversa: `aguardando_recharge_txid:${amount}` })
+        .eq("telegram_id", user.id);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🧾 <b>Aguardando seu ID de Transação Binance para Recarga</b>\n\n` +
+          `Envie aqui no chat o <b>ID da Transação / Ordem</b> gerado no app da Binance referente ao envio de <b>$${amount.toFixed(2)} USDT</b> para o UID <code>1257797463</code>:\n\n` +
+          `<i>⚡ Assim que você enviar, o valor será creditado na sua carteira automaticamente!</i>\n\n` +
+          `<i>(Caso queira cancelar, envie /cancelar)</i>`,
+        parse_mode: "HTML",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Pagar pedido com saldo em conta
+    if (data.startsWith("pay_wallet_")) {
+      const pedidoId = data.replace("pay_wallet_", "");
+      const supabaseAdmin = createAdminClient();
+
+      const { data: cliente } = await supabaseAdmin
+        .from("clientes")
+        .select("id, saldo_carteira_stars")
+        .eq("telegram_id", user.id)
+        .maybeSingle();
+
+      if (!cliente) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: "❌ Conta de cliente não localizada.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const { data: pedido } = await supabaseAdmin
+        .from("pedidos")
+        .select("*, produto:produtos(nome, emoji)")
+        .eq("id", pedidoId)
+        .single();
+
+      if (!pedido || pedido.status_pagamento === "pago") {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: "⚠️ Este pedido já foi pago ou não está mais pendente.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `⏳ <b>Processando pagamento com saldo...</b>\nDebitando $${Number(pedido.total_usd).toFixed(2)} USDT da sua conta e liberando seu acesso na hora!`,
+        parse_mode: "HTML",
+      });
+
+      const result = await orderService.payWithWalletBalance({
+        pedidoId: pedido.id,
+        clienteId: cliente.id,
+        valorStars: pedido.total_stars,
+        descricao: `Compra de ${pedido.quantidade}x ${pedido.produto?.nome || "Produto Digital"}`,
+      });
+
+      if (!result.success) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ <b>Falha ao pagar com saldo:</b> ${result.message}\n\nVocê pode recarregar sua carteira ou pagar via Binance UID.`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "➕ Recarregar Saldo", callback_data: "recharge_wallet" }],
+              [{ text: "💵 Pagar via Binance UID", callback_data: `show_binance_${pedido.id}` }],
+            ],
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const novoSaldoUsd = ((result.novoSaldoStars || 0) / 50).toFixed(2);
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🎉 <b>Pagamento com Saldo Confirmado!</b>\n\n` +
+          `📦 <b>Produto:</b> ${pedido.produto?.emoji || "📦"} <b>${pedido.produto?.nome}</b> (${pedido.quantidade}x)\n` +
+          `🏷️ <b>Ref:</b> <code>${pedido.referencia_unica}</code>\n` +
+          `💵 <b>Valor Debitado:</b> -$${Number(pedido.total_usd).toFixed(2)} USDT (${pedido.total_stars} ⭐)\n` +
+          `💰 <b>Seu Saldo Restante:</b> <b>$${novoSaldoUsd} USDT</b> (${result.novoSaldoStars} ⭐)\n\n` +
+          `<i>Seu produto foi liberado e os dados de entrega estão acima!</i>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📦 Ver Meus Pedidos", callback_data: "my_orders" }],
+            [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
+          ],
+        },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Exibir fatura Binance UID para pedido individual
+    if (data.startsWith("show_binance_")) {
+      const pedidoId = data.replace("show_binance_", "");
+      await renderBinanceInvoice(telegram, chatId, pedidoId, messageId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Pagar carrinho completo com saldo da carteira
+    if (data.startsWith("pay_cart_wallet:")) {
+      const pedidoIdsStr = data.replace("pay_cart_wallet:", "");
+      const pedidoIds = pedidoIdsStr.split(",").map((s) => s.trim()).filter(Boolean);
+      const supabaseAdmin = createAdminClient();
+
+      const { data: cliente } = await supabaseAdmin
+        .from("clientes")
+        .select("id, saldo_carteira_stars")
+        .eq("telegram_id", user.id)
+        .maybeSingle();
+
+      if (!cliente) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: "❌ Conta de cliente não localizada.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const { data: pedidos } = await supabaseAdmin
+        .from("pedidos")
+        .select("*, produto:produtos(nome, emoji)")
+        .in("id", pedidoIds)
+        .eq("status_pagamento", "pendente");
+
+      const lista = pedidos || [];
+      if (lista.length === 0) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: "⚠️ Nenhum pedido pendente encontrado para este carrinho.",
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const totalStars = lista.reduce((acc, p) => acc + (p.total_stars || 1), 0);
+      const totalUsd = lista.reduce((acc, p) => acc + Number(p.total_usd), 0);
+
+      // Debita total da carteira atomicamente
+      const { data: debitoRes, error: debErr } = await supabaseAdmin.rpc(
+        "movimentar_carteira_atomicamente",
+        {
+          p_cliente_id: cliente.id,
+          p_tipo: "debito",
+          p_valor_stars: totalStars,
+          p_descricao: `Pagamento de carrinho (${lista.length} itens)`,
+        }
+      );
+
+      if (debErr || !debitoRes?.success) {
+        await telegram.sendMessage({
+          chat_id: chatId,
+          text: `❌ <b>Saldo insuficiente:</b> ${debitoRes?.message || "Recarregue sua carteira para continuar."}`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "➕ Recarregar Saldo", callback_data: "recharge_wallet" }]],
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `⏳ <b>Pagamento do carrinho debitado com sucesso!</b>\nLiberando seus ${lista.length} produtos na hora...`,
+        parse_mode: "HTML",
+      });
+
+      // Processa cada pedido do carrinho
+      for (const p of lista) {
+        try {
+          await supabaseAdmin.rpc("confirmar_pagamento_atomicamente", {
+            p_pedido_id: p.id,
+            p_provedor: "carteira_interna",
+            p_referencia_externa: `wallet_cart_${p.id}_${Date.now()}`,
+            p_valor_stars: p.total_stars,
+            p_payload_seguro: { lote: pedidoIdsStr },
+          });
+
+          await supabaseAdmin
+            .from("pedidos")
+            .update({ metodo_pagamento: "carteira_interna" })
+            .eq("id", p.id);
+
+          await orderService.retryPedidoFornecedorErro(p.id);
+        } catch (e: any) {
+          console.error(`[Cart Wallet] Erro ao processar item #${p.id}:`, e);
+        }
+      }
+
+      // Esvazia carrinho do cliente
+      await supabaseAdmin
+        .from("clientes")
+        .update({ carrinho: [], estado_conversa: null })
+        .eq("id", cliente.id);
+
+      const novoSaldoUsd = ((debitoRes.saldo_posterior || 0) / 50).toFixed(2);
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text:
+          `🎉 <b>Carrinho Pago com Sucesso!</b>\n\n` +
+          `📦 <b>Produtos pagos:</b> ${lista.length} item(ns)\n` +
+          `💵 <b>Total Debitado:</b> -$${totalUsd.toFixed(2)} USDT (${totalStars} ⭐)\n` +
+          `💰 <b>Seu Saldo Restante:</b> <b>$${novoSaldoUsd} USDT</b> (${debitoRes.saldo_posterior} ⭐)\n\n` +
+          `<i>Todas as suas licenças foram enviadas aqui na conversa e estão salvas em Meus Pedidos!</i>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📦 Ver Meus Pedidos", callback_data: "my_orders" }],
+            [{ text: "🛍️ Explorar Loja", callback_data: "browse_cat" }],
+          ],
+        },
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -1302,7 +1622,7 @@ async function checkoutCart(
   const supabase = createAdminClient();
   const { data: cliente } = await supabase
     .from("clientes")
-    .select("id, carrinho")
+    .select("id, carrinho, saldo_carteira_stars")
     .eq("telegram_id", user.id)
     .maybeSingle();
 
@@ -1347,8 +1667,12 @@ async function checkoutCart(
   const totalUsdt = createdOrders
     .reduce((acc, o) => acc + Number(o.total_usd), 0)
     .toFixed(2);
+  const totalStars = createdOrders.reduce((acc, o) => acc + (o.total_stars || 1), 0);
+  const saldoStars = cliente?.saldo_carteira_stars || 0;
+  const saldoUsd = (saldoStars / 50).toFixed(2);
+  const temSaldo = saldoStars >= totalStars;
 
-  // Armazena estado da conversa para aguardar TxID do lote
+  // Armazena estado da conversa para aguardar TxID do lote caso escolha Binance
   await supabase
     .from("clientes")
     .update({ estado_conversa: `aguardando_txid_cart:${pedidoIds.join(",")}` })
@@ -1367,51 +1691,61 @@ async function checkoutCart(
     resumoItens += `• <b>${o.quantidade || 1}x</b> ${o.produto_nome} ($${Number(o.total_usd).toFixed(2)} USDT)\n`;
   }
 
-  const text =
+  let text =
     `🧾 <b>FATURA DO CARRINHO (${createdOrders.length} PRODUTOS)</b>\n\n` +
     `📦 <b>Itens Inclusos no Pedido:</b>\n` +
     `${resumoItens}\n` +
-    `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
+    `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b> (${totalStars} ⭐)\n` +
+    `💳 <b>Seu Saldo em Conta:</b> <b>$${saldoUsd} USDT</b> (${saldoStars} ⭐)\n\n`;
+
+  if (temSaldo) {
+    text += `✅ <b>Você tem saldo suficiente!</b> Você pode pagar tudo com 1 clique utilizando seu saldo da carteira:\n\n`;
+  }
+
+  text +=
     `═══════════════════════════\n` +
-    `📱 <b>DADOS DE PAGAMENTO (BINANCE)</b>\n` +
+    `📱 <b>PAGAMENTO VIA BINANCE UID</b>\n` +
     `═══════════════════════════\n` +
     `🆔 <b>Binance UID de Destino:</b>\n` +
     `<code>${binanceUid}</code>\n` +
     `<i>(Toque no número acima para copiar automaticamente)</i>\n\n` +
-    `💵 <b>Moeda:</b> USDT\n` +
-    `🏷️ <b>Valor Exato:</b> <code>${totalUsdt}</code> USDT\n\n` +
-    `<b>Como transferir no app da Binance:</b>\n` +
-    `1. Abra o app <b>Binance</b> no celular\n` +
-    `2. Toque em <b>Pagar / Pay</b> (ou Carteira > Enviar > Enviar por ID)\n` +
-    `3. Cole o UID: <code>${binanceUid}</code>\n` +
-    `4. Digite o valor exato: <b>${totalUsdt} USDT</b>\n` +
-    `5. Conclua a transferência (0% de taxa)\n` +
-    `6. Copie o <b>ID da Transação / Ordem</b> gerado no comprovante\n\n` +
-    `═══════════════════════════\n` +
-    `⚡ <b>ENTREGA 100% AUTOMÁTICA</b>\n` +
-    `═══════════════════════════\n` +
-    `Assim que concluir o envio na Binance, clique no botão verde abaixo e envie o código. Todos os ${createdOrders.length} produtos serão entregues juntos <b>na hora</b> aqui nesta conversa!`;
+    `💵 <b>Valor Exato:</b> <code>${totalUsdt}</code> USDT\n\n` +
+    `⚡ <i>Caso opte por Binance, envie o comprovante/TxID após a transferência.</i>`;
+
+  const inline_keyboard: any[] = [];
+  if (temSaldo) {
+    inline_keyboard.push([
+      {
+        text: `💰 Pagar Carrinho com Saldo ($${totalUsdt} USDT)`,
+        callback_data: `pay_cart_wallet:${pedidoIds.join(",")}`,
+      },
+    ]);
+  } else {
+    inline_keyboard.push([
+      {
+        text: "➕ Recarregar Saldo na Carteira",
+        callback_data: "recharge_wallet",
+      },
+    ]);
+  }
+  inline_keyboard.push([
+    {
+      text: "⚡ Já transferi via Binance! Informar ID",
+      callback_data: "informar_txid_cart",
+    },
+  ]);
+  inline_keyboard.push([
+    {
+      text: "❌ Cancelar",
+      callback_data: "cancelar_cart",
+    },
+  ]);
 
   await telegram.sendMessage({
     chat_id: chatId,
     text,
     parse_mode: "HTML",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "⚡ Já transferi! Informar ID da Transação",
-            callback_data: "informar_txid_cart",
-          },
-        ],
-        [
-          {
-            text: "❌ Cancelar",
-            callback_data: "cancelar_cart",
-          },
-        ],
-      ],
-    },
+    reply_markup: { inline_keyboard },
   });
 }
 
@@ -1528,6 +1862,7 @@ async function renderSearchResults(
 
 /**
  * Inicia o checkout gerando pedido atômico para uma quantidade específica
+ * e oferece a opção de pagar com saldo da carteira ou via transferência Binance UID.
  */
 async function initiateCheckout(
   telegram: TelegramBotClient,
@@ -1549,62 +1884,81 @@ async function initiateCheckout(
     });
 
     const supabase = createAdminClient();
-    const { data: configRow } = await supabase
-      .from("configuracoes")
-      .select("valor")
-      .eq("chave", "binance_id")
+    const { data: cliente } = await supabase
+      .from("clientes")
+      .select("id, saldo_carteira_stars")
+      .eq("telegram_id", user.id)
       .maybeSingle();
 
-    const binanceUid = configRow?.valor || "1257797463";
+    const saldoStars = cliente?.saldo_carteira_stars || 0;
+    const saldoUsd = (saldoStars / 50).toFixed(2);
+    const totalStars = orderData.total_stars || 1;
     const totalUsdt = Number(orderData.total_usd).toFixed(2);
     const precoUnitario = (Number(orderData.total_usd) / qty).toFixed(2);
 
-    const text =
-      `🧾 <b>FATURA DO PEDIDO: ${orderData.referencia_unica}</b>\n\n` +
+    const temSaldoSuficiente = saldoStars >= totalStars;
+
+    let text =
+      `🛍️ <b>Revisão do Pedido: ${orderData.referencia_unica}</b>\n\n` +
       `📦 <b>Produto:</b> ${orderData.produto_nome}\n` +
       `🔢 <b>Quantidade:</b> <b>${qty} unidade(s)</b>\n` +
       `💵 <b>Preço Unitário:</b> $${precoUnitario} USDT\n` +
-      `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
-      `═══════════════════════════\n` +
-      `📱 <b>DADOS DE PAGAMENTO (BINANCE)</b>\n` +
-      `═══════════════════════════\n` +
-      `🆔 <b>Binance UID de Destino:</b>\n` +
-      `<code>${binanceUid}</code>\n` +
-      `<i>(Toque no número acima para copiar automaticamente)</i>\n\n` +
-      `💵 <b>Moeda:</b> USDT\n` +
-      `🏷️ <b>Valor Exato:</b> <code>${totalUsdt}</code> USDT\n\n` +
-      `<b>Como transferir no app da Binance:</b>\n` +
-      `1. Abra o app <b>Binance</b> no celular\n` +
-      `2. Toque em <b>Pagar / Pay</b> (ou Carteira > Enviar > Enviar por ID)\n` +
-      `3. Cole o UID: <code>${binanceUid}</code>\n` +
-      `4. Digite o valor exato: <b>${totalUsdt} USDT</b>\n` +
-      `5. Conclua o envio (taxa 0!)\n` +
-      `6. Copie o <b>ID da Transação / Ordem</b> que aparece no comprovante\n\n` +
-      `═══════════════════════════\n` +
-      `⚡ <b>ENTREGA 100% AUTOMÁTICA</b>\n` +
-      `═══════════════════════════\n` +
-      `Assim que você transferir, toque no botão verde abaixo e envie o ID da transação. Seus ${qty} acesso(s) serão enviados <b>na hora</b> aqui nesta conversa!`;
+      `💰 <b>Total a Pagar:</b> <b>$${totalUsdt} USDT</b> (${totalStars} ⭐)\n\n` +
+      `💳 <b>Seu Saldo em Conta:</b> <b>$${saldoUsd} USDT</b> (${saldoStars} ⭐)\n`;
+
+    let inline_keyboard: any[] = [];
+
+    if (temSaldoSuficiente) {
+      text += `\n✅ <b>Você possui saldo suficiente!</b> Toque no botão abaixo para pagar e receber seu acesso imediatamente com 1 clique:\n`;
+      inline_keyboard = [
+        [
+          {
+            text: `💰 Pagar com Meu Saldo ($${totalUsdt} USDT)`,
+            callback_data: `pay_wallet_${orderData.pedido_id}`,
+          },
+        ],
+        [
+          {
+            text: `💵 Pagar via Transferência Binance UID`,
+            callback_data: `show_binance_${orderData.pedido_id}`,
+          },
+        ],
+        [
+          {
+            text: `❌ Cancelar Pedido`,
+            callback_data: `cancelar_pedido_${orderData.pedido_id}`,
+          },
+        ],
+      ];
+    } else {
+      text += `\n⚠️ <i>Saldo insuficiente para pagamento direto. Você pode recarregar sua carteira ou transferir o valor exato via Binance UID:</i>\n`;
+      inline_keyboard = [
+        [
+          {
+            text: `➕ Recarregar Saldo na Carteira`,
+            callback_data: `recharge_wallet`,
+          },
+        ],
+        [
+          {
+            text: `💵 Pagar via Binance UID ($${totalUsdt} USDT)`,
+            callback_data: `show_binance_${orderData.pedido_id}`,
+          },
+        ],
+        [
+          {
+            text: `❌ Cancelar Pedido`,
+            callback_data: `cancelar_pedido_${orderData.pedido_id}`,
+          },
+        ],
+      ];
+    }
 
     await telegram.sendMessage({
       chat_id: chatId,
       text,
       parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "⚡ Já transferi! Informar ID da Transação",
-              callback_data: `informar_txid_${orderData.pedido_id}`,
-            },
-          ],
-          [
-            {
-              text: "❌ Cancelar Pedido",
-              callback_data: `cancelar_pedido_${orderData.pedido_id}`,
-            },
-          ],
-        ],
-      },
+      reply_markup: { inline_keyboard },
     });
   } catch (err: any) {
     await telegram.sendMessage({
@@ -1613,6 +1967,146 @@ async function initiateCheckout(
       parse_mode: "HTML",
     });
   }
+}
+
+/**
+ * Renderiza a fatura Binance UID para um pedido específico
+ */
+async function renderBinanceInvoice(
+  telegram: TelegramBotClient,
+  chatId: number,
+  pedidoId: string,
+  messageId?: number
+) {
+  const supabase = createAdminClient();
+  const { data: pedido } = await supabase
+    .from("pedidos")
+    .select("*, produto:produtos(nome, emoji)")
+    .eq("id", pedidoId)
+    .single();
+
+  if (!pedido) return;
+
+  const { data: configRow } = await supabase
+    .from("configuracoes")
+    .select("valor")
+    .eq("chave", "binance_id")
+    .maybeSingle();
+
+  const binanceUid = configRow?.valor || "1257797463";
+  const totalUsdt = Number(pedido.total_usd).toFixed(2);
+  const qty = pedido.quantidade || 1;
+  const precoUnitario = (Number(pedido.total_usd) / qty).toFixed(2);
+
+  const text =
+    `🧾 <b>FATURA DO PEDIDO: ${pedido.referencia_unica}</b>\n\n` +
+    `📦 <b>Produto:</b> ${pedido.produto?.nome || "Produto Digital"}\n` +
+    `🔢 <b>Quantidade:</b> <b>${qty} unidade(s)</b>\n` +
+    `💵 <b>Preço Unitário:</b> $${precoUnitario} USDT\n` +
+    `💰 <b>Valor Total a Pagar:</b> <b>$${totalUsdt} USDT</b>\n\n` +
+    `═══════════════════════════\n` +
+    `📱 <b>DADOS DE PAGAMENTO (BINANCE)</b>\n` +
+    `═══════════════════════════\n` +
+    `🆔 <b>Binance UID de Destino:</b>\n` +
+    `<code>${binanceUid}</code>\n` +
+    `<i>(Toque no número acima para copiar automaticamente)</i>\n\n` +
+    `💵 <b>Moeda:</b> USDT\n` +
+    `🏷️ <b>Valor Exato:</b> <code>${totalUsdt}</code> USDT\n\n` +
+    `<b>Como transferir no app da Binance:</b>\n` +
+    `1. Abra o app <b>Binance</b> no celular\n` +
+    `2. Toque em <b>Pagar / Pay</b> (ou Carteira > Enviar > Enviar por ID)\n` +
+    `3. Cole o UID: <code>${binanceUid}</code>\n` +
+    `4. Digite o valor exato: <b>${totalUsdt} USDT</b>\n` +
+    `5. Conclua o envio (taxa 0!)\n` +
+    `6. Copie o <b>ID da Transação / Ordem</b> que aparece no comprovante\n\n` +
+    `═══════════════════════════\n` +
+    `⚡ <b>ENTREGA 100% AUTOMÁTICA</b>\n` +
+    `═══════════════════════════\n` +
+    `Assim que você transferir, toque no botão verde abaixo e envie o ID da transação. Seus ${qty} acesso(s) serão enviados <b>na hora</b> aqui nesta conversa!`;
+
+  await sendOrEdit(telegram, chatId, messageId, text, {
+    inline_keyboard: [
+      [
+        {
+          text: "⚡ Já transferi! Informar ID da Transação",
+          callback_data: `informar_txid_${pedido.id}`,
+        },
+      ],
+      [
+        {
+          text: "❌ Cancelar Pedido",
+          callback_data: `cancelar_pedido_${pedido.id}`,
+        },
+      ],
+    ],
+  });
+}
+
+/**
+ * Menu de opções de recarga de saldo na carteira
+ */
+async function renderRechargeMenu(
+  telegram: TelegramBotClient,
+  chatId: number,
+  messageId?: number
+) {
+  const text =
+    `💳 <b>Recarga de Saldo na Carteira</b>\n\n` +
+    `Adicione saldo em USDT para fazer compras instantâneas na loja com 1 clique, sem precisar transferir na Binance a cada pedido!\n\n` +
+    `Escolha um dos valores abaixo para recarregar via <b>Binance UID</b>:`;
+
+  await sendOrEdit(telegram, chatId, messageId, text, {
+    inline_keyboard: [
+      [
+        { text: "➕ $2.00 USDT (100 ⭐)", callback_data: "recharge_pkg_2" },
+        { text: "➕ $5.00 USDT (250 ⭐)", callback_data: "recharge_pkg_5" },
+      ],
+      [
+        { text: "➕ $10.00 USDT (500 ⭐)", callback_data: "recharge_pkg_10" },
+        { text: "➕ $20.00 USDT (1000 ⭐)", callback_data: "recharge_pkg_20" },
+      ],
+      [{ text: "🔙 Voltar ao Meu Saldo", callback_data: "my_balance" }],
+    ],
+  });
+}
+
+/**
+ * Fatura de depósito Binance UID para recarga de carteira
+ */
+async function renderRechargeInvoice(
+  telegram: TelegramBotClient,
+  chatId: number,
+  amountUsd: number,
+  messageId?: number
+) {
+  const stars = Math.round(amountUsd * 50);
+  const binanceUid = "1257797463";
+
+  const text =
+    `🧾 <b>Recarga de Saldo — $${amountUsd.toFixed(2)} USDT (${stars} ⭐)</b>\n\n` +
+    `Transfira <b>${amountUsd.toFixed(2)} USDT</b> para o Binance UID abaixo:\n\n` +
+    `🆔 <b>Binance UID de Destino:</b>\n` +
+    `<code>${binanceUid}</code>\n` +
+    `<i>(Toque no número acima para copiar automaticamente)</i>\n\n` +
+    `💵 <b>Valor Exato:</b> <code>${amountUsd.toFixed(2)}</code> USDT\n\n` +
+    `<b>Como transferir:</b>\n` +
+    `1. Abra o app <b>Binance</b> > <b>Pagar / Pay</b> (ou Enviar por ID)\n` +
+    `2. Cole o UID: <code>${binanceUid}</code>\n` +
+    `3. Envie <b>${amountUsd.toFixed(2)} USDT</b>\n` +
+    `4. Copie o <b>ID da Transação / Ordem</b> gerado\n\n` +
+    `⚡ <i>Assim que transferir, clique no botão abaixo e envie o código aqui. Seu saldo será creditado automaticamente na hora!</i>`;
+
+  await sendOrEdit(telegram, chatId, messageId, text, {
+    inline_keyboard: [
+      [
+        {
+          text: "⚡ Já transferi! Informar ID da Transação",
+          callback_data: `informar_recharge_txid_${amountUsd}`,
+        },
+      ],
+      [{ text: "❌ Cancelar Recarga", callback_data: "my_balance" }],
+    ],
+  });
 }
 
 /**
@@ -1716,7 +2210,7 @@ async function renderUserBalance(
   // Busca o cliente pelo telegram_id
   const { data: cliente } = await supabase
     .from("clientes")
-    .select("id")
+    .select("id, saldo_carteira_stars")
     .eq("telegram_id", telegramId)
     .maybeSingle();
 
@@ -1725,7 +2219,7 @@ async function renderUserBalance(
       telegram,
       chatId,
       messageId,
-      "💰 <b>Meu Saldo / Extrato</b>\n\nVocê ainda não possui compras registradas.",
+      "💰 <b>Meu Saldo / Carteira</b>\n\nVocê ainda não possui conta registrada.",
       {
         inline_keyboard: [
           [{ text: "🛍️ Explorar Loja", callback_data: "browse_cat" }],
@@ -1734,6 +2228,9 @@ async function renderUserBalance(
     );
     return;
   }
+
+  const saldoStars = cliente.saldo_carteira_stars || 0;
+  const saldoUsd = (saldoStars / 50).toFixed(2);
 
   // Busca pedidos pagos com info do produto
   const { data: pedidos } = await supabase
@@ -1752,7 +2249,9 @@ async function renderUserBalance(
   ).length;
 
   let text =
-    `💰 <b>Meu Extrato de Compras</b>\n\n` +
+    `💰 <b>Minha Carteira & Saldo</b>\n\n` +
+    `💵 <b>Saldo Disponível em Conta:</b> <b>$${saldoUsd} USDT</b> (${saldoStars} ⭐)\n` +
+    `⚡ <i>Com saldo em conta você compra qualquer produto com 1 clique, sem precisar transferir na Binance a cada compra!</i>\n\n` +
     `📊 <b>Resumo da Conta:</b>\n` +
     `• <b>Total investido:</b> <b>$${totalGasto.toFixed(2)} USDT</b>\n` +
     `• <b>Pedidos entregues:</b> ${totalEntregues}\n` +
@@ -1760,7 +2259,7 @@ async function renderUserBalance(
     `\n`;
 
   if (lista.length === 0) {
-    text += `<i>Nenhuma compra registrada ainda. Explore nosso catálogo!</i>`;
+    text += `<i>Nenhuma compra realizada ainda. Explore nosso catálogo!</i>`;
   } else {
     const exibir = lista.slice(0, 10);
     text += `🧾 <b>Últimas compras (${exibir.length}):</b>\n\n`;
@@ -1781,6 +2280,7 @@ async function renderUserBalance(
 
   await sendOrEdit(telegram, chatId, messageId, text, {
     inline_keyboard: [
+      [{ text: "➕ Recarregar Saldo / Depositar USDT", callback_data: "recharge_wallet" }],
       [{ text: "📦 Ver Meus Pedidos Completos", callback_data: "my_orders" }],
       [{ text: "🛍️ Continuar Comprando", callback_data: "browse_cat" }],
     ],

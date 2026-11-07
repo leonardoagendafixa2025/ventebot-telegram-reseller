@@ -29,6 +29,24 @@ export default async function ClientesPage() {
     revalidatePath("/dashboard/clientes");
   }
 
+  async function addCredit(formData: FormData) {
+    "use server";
+    const clienteId = formData.get("clienteId") as string;
+    const valorUsd = parseFloat(formData.get("valorUsd") as string) || 0;
+    if (valorUsd <= 0) return;
+
+    const stars = Math.round(valorUsd * 50);
+    const serverSupabase = await createClient();
+    await serverSupabase.rpc("movimentar_carteira_atomicamente", {
+      p_cliente_id: clienteId,
+      p_tipo: "credito",
+      p_valor_stars: stars,
+      p_descricao: `Crédito manual via painel admin ($${valorUsd.toFixed(2)} USDT)`,
+    });
+
+    revalidatePath("/dashboard/clientes");
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -48,8 +66,9 @@ export default async function ClientesPage() {
               <tr>
                 <th className="px-6 py-4">Telegram ID</th>
                 <th className="px-6 py-4">Usuário / Nome</th>
-                <th className="px-6 py-4">Saldo em Stars</th>
-                <th className="px-6 py-4">Pedidos Realizados</th>
+                <th className="px-6 py-4">Saldo em Conta</th>
+                <th className="px-6 py-4">Adicionar Saldo</th>
+                <th className="px-6 py-4">Pedidos</th>
                 <th className="px-6 py-4">Primeiro Acesso</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Ação</th>
@@ -70,8 +89,37 @@ export default async function ClientesPage() {
                         </p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-xs font-semibold text-amber-300">
-                      {cli.saldo_carteira_stars} ⭐
+                    <td className="px-6 py-4 text-xs font-semibold">
+                      <div className="font-mono text-emerald-400 font-bold">
+                        ${((cli.saldo_carteira_stars || 0) / 50).toFixed(2)} USDT
+                      </div>
+                      <div className="text-[10px] text-amber-400 font-mono">
+                        {cli.saldo_carteira_stars || 0} ⭐
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-xs">
+                      <form action={addCredit} className="inline-flex items-center gap-1.5">
+                        <input type="hidden" name="clienteId" value={cli.id} />
+                        <div className="relative">
+                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-mono">$</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0.5"
+                            name="valorUsd"
+                            placeholder="0.00"
+                            required
+                            className="w-16 pl-4 pr-1 py-1 bg-slate-900 border border-white/[0.12] rounded text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="px-2 py-1 rounded text-[11px] font-semibold bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white border border-emerald-500/40 transition-colors"
+                          title="Creditar saldo para o cliente"
+                        >
+                          + Adicionar
+                        </button>
+                      </form>
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-300">
                       {cli.pedidos?.[0]?.count || 0} compras

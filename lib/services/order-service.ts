@@ -109,6 +109,109 @@ export class OrderService {
   }
 
   /**
+   * Paga um pedido utilizando o saldo da carteira interna do cliente.
+   * Debita atomicamente da carteira e aciona fulfillment imediato.
+   */
+  async payWithWalletBalance(params: {
+    pedidoId: string;
+    clienteId: string;
+    valorStars: number;
+    descricao?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    novoSaldoStars?: number;
+    referenciaUnica?: string;
+    order?: any;
+  }> {
+    const supabase = createAdminClient();
+
+    // 1. Debita o saldo da carteira atomicamente
+    const { data: debitoRes, error: debitoErr } = await supabase.rpc(
+      "movimentar_carteira_atomicamente",
+      {
+        p_cliente_id: params.clienteId,
+        p_tipo: "debito",
+        p_valor_stars: params.valorStars,
+        p_descricao: params.descricao || `Pagamento de pedido via saldo em conta`,
+        p_pedido_id: params.pedidoId,
+      }
+    );
+
+    if (debitoErr || !debitoRes?.success) {
+      return {
+        success: false,
+        message: debitoRes?.message || debitoErr?.message || "Saldo insuficiente na sua carteira.",
+      };
+    }
+
+    // 2. Confirma o pagamento no banco com método carteira_interna
+    const { data: confirmRes, error: confirmErr } = await supabase.rpc(
+      "confirmar_pagamento_atomicamente",
+      {
+        p_pedido_id: params.pedidoId,
+        p_provedor: "carteira_interna",
+        p_referencia_externa: `wallet_${params.pedidoId}_${Date.now()}`,
+        p_valor_stars: params.valorStars,
+        p_payload_seguro: {
+          tipo: "carteira_interna",
+          saldo_anterior: debitoRes.saldo_anterior,
+          saldo_posterior: debitoRes.saldo_posterior,
+        },
+      }
+    );
+
+    if (confirmErr || !confirmRes?.success) {
+      // Estorna o valor em caso de falha de confirmação
+      await supabase.rpc("movimentar_carteira_atomicamente", {
+        p_cliente_id: params.clienteId,
+        p_tipo: "estorno",
+        p_valor_stars: params.valorStars,
+        p_descricao: "Estorno automático por erro na confirmação do pedido",
+        p_pedido_id: params.pedidoId,
+      });
+
+      return {
+        success: false,
+        message: confirmRes?.message || "Falha ao registrar pagamento com saldo. O valor foi estornado.",
+      };
+    }
+
+    // Atualiza o método de pagamento
+    await supabase
+      .from("pedidos")
+      .update({ metodo_pagamento: "carteira_interna" })
+      .eq("id", params.pedidoId);
+
+    // 3. Executa o fulfillment do pedido
+    const { data: pedido } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("id", params.pedidoId)
+      .single();
+
+    if (pedido) {
+      if (pedido.produto?.origem === "proprio") {
+        await this.fulfillProprietaryProduct(pedido);
+      } else {
+        await this.fulfillVenteBotProduct(pedido);
+      }
+    }
+
+    return {
+      success: true,
+      message: "Pagamento com saldo concluído com sucesso!",
+      novoSaldoStars: debitoRes.saldo_posterior,
+      referenciaUnica: pedido?.referencia_unica,
+      order: pedido,
+    };
+  }
+
+  /**
    * Executa a compra e entrega junto à VenteBot
    */
   private async fulfillVenteBotProduct(pedido: any) {

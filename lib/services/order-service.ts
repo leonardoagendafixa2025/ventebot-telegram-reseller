@@ -410,6 +410,69 @@ export class OrderService {
   }
 
   /**
+   * Reprocessa um pedido com `fornecedor_erro` ou `pendente` que ficou sem entrega.
+   * Usado quando o operador repõe saldo no fornecedor e quer liberar manualmente.
+   */
+  async retryPedidoFornecedorErro(pedidoId: string): Promise<{
+    success: boolean;
+    message: string;
+    status?: string;
+  }> {
+    const supabase = createAdminClient();
+
+    // Busca o pedido com todos os dados relacionados
+    const { data: pedido, error: pedErr } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("id", pedidoId)
+      .single();
+
+    if (pedErr || !pedido) {
+      return { success: false, message: "Pedido não encontrado." };
+    }
+
+    // Apenas reprocessa pedidos que foram pagos e não entregues
+    if (pedido.status_pagamento !== "pago") {
+      return { success: false, message: "Pedido não está marcado como pago. Não pode ser reprocessado." };
+    }
+
+    if (pedido.status_entrega === "entregue") {
+      return { success: false, message: "Pedido já foi entregue anteriormente." };
+    }
+
+    const statusPermitidos = ["fornecedor_erro", "fornecedor_status_desconhecido", null, ""];
+    if (!statusPermitidos.includes(pedido.status_fornecedor)) {
+      return {
+        success: false,
+        message: `Status do fornecedor '${pedido.status_fornecedor}' não permite reprocessamento manual. Use a reconciliação automática.`,
+      };
+    }
+
+    // Delegar ao fulfillment correto
+    if (pedido.produto?.origem === "proprio") {
+      const result = await this.fulfillProprietaryProduct(pedido);
+      return {
+        success: result.success,
+        message: result.success ? "Produto próprio entregue com sucesso!" : (result.message || "Falha ao entregar produto próprio."),
+        status: result.success ? "entregue" : "pendente",
+      };
+    }
+
+    const result = await this.fulfillVenteBotProduct(pedido);
+    return {
+      success: result.success,
+      message: result.success
+        ? "Pedido reprocessado e entregue com sucesso!"
+        : (result.message || "Falha ao reprocessar com VenteBot."),
+      status: (result as any).status,
+    };
+  }
+
+  /**
    * Reconcilia pedidos pendentes e consulta status no fornecedor
    */
   async reconcilePendingOrders(): Promise<{

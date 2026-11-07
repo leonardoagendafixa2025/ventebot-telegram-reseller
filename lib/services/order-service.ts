@@ -473,6 +473,160 @@ export class OrderService {
   }
 
   /**
+   * Entrega manual de credenciais pelo operador/administrador.
+   * Usado quando o produto foi descontinuado no fornecedor ou quando o operador
+   * deseja fornecer credenciais próprias diretamente ao cliente pelo Telegram.
+   */
+  async manualDeliver(pedidoId: string, conteudo: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    const supabase = createAdminClient();
+
+    const { data: pedido, error } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("id", pedidoId)
+      .single();
+
+    if (error || !pedido) {
+      return { success: false, message: "Pedido não encontrado." };
+    }
+
+    if (pedido.status_entrega === "entregue") {
+      return { success: false, message: "Este pedido já foi marcado como entregue anteriormente." };
+    }
+
+    if (!conteudo || !conteudo.trim()) {
+      return { success: false, message: "O conteúdo / credenciais da entrega não podem estar vazios." };
+    }
+
+    const conteudoTrimmed = conteudo.trim();
+
+    // Tenta registrar atomicamente
+    const { error: rpcErr } = await supabase.rpc("registrar_entrega_atomicamente", {
+      p_pedido_id: pedido.id,
+      p_status_fornecedor: "manual_entregue",
+      p_status_entrega: "entregue",
+      p_fornecedor_order_id: null,
+      p_fornecedor_order_number: null,
+      p_conteudo_entregue: conteudoTrimmed,
+      p_itens_entregues: [{ account_data: conteudoTrimmed }],
+      p_detalhes_falha: null,
+    });
+
+    if (rpcErr) {
+      // Fallback update direto na tabela de pedidos
+      await supabase
+        .from("pedidos")
+        .update({
+          status_entrega: "entregue",
+          status_fornecedor: "manual_entregue",
+          status_pagamento: "pago",
+          conteudo_entregue: conteudoTrimmed,
+          detalhes_falha: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pedido.id);
+    }
+
+    // Notifica o cliente instantaneamente no chat do Telegram
+    const clienteTgId = pedido.cliente?.telegram_id;
+    if (clienteTgId) {
+      try {
+        await this.telegram.sendMessage({
+          chat_id: clienteTgId,
+          text:
+            `🎉 <b>Pedido Entregue com Sucesso!</b>\n\n` +
+            `📦 <b>Produto:</b> ${pedido.produto?.nome || "Produto Digital"}\n` +
+            `🔢 <b>Qtd:</b> ${pedido.quantidade}\n` +
+            `🏷️ <b>Ref:</b> <code>${pedido.referencia_unica}</code>\n\n` +
+            `<b>Dados de acesso / Licença:</b>\n<pre>${conteudoTrimmed}</pre>\n\n` +
+            `<i>Obrigado pela preferência! Caso precise de suporte, digite /suporte.</i>`,
+          parse_mode: "HTML",
+        });
+      } catch (tgErr) {
+        console.warn("[OrderService] Erro ao enviar mensagem de entrega manual no Telegram:", tgErr);
+      }
+    }
+
+    // Publica no canal público se configurado
+    try {
+      await this.publishSaleToChannel(pedido);
+    } catch {}
+
+    return {
+      success: true,
+      message: "Pedido entregue com sucesso e dados enviados ao cliente no Telegram!",
+    };
+  }
+
+  /**
+   * Cancela um pedido manualmente
+   */
+  async cancelOrder(pedidoId: string, motivo?: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    const supabase = createAdminClient();
+
+    const { data: pedido, error } = await supabase
+      .from("pedidos")
+      .select(`
+        *,
+        cliente:clientes(id, telegram_id, username, first_name),
+        produto:produtos(*)
+      `)
+      .eq("id", pedidoId)
+      .single();
+
+    if (error || !pedido) {
+      return { success: false, message: "Pedido não encontrado." };
+    }
+
+    if (pedido.status_entrega === "entregue") {
+      return { success: false, message: "Pedido já entregue não pode ser cancelado." };
+    }
+
+    const detalhe = motivo || "Cancelado pelo operador da loja.";
+
+    await supabase
+      .from("pedidos")
+      .update({
+        status_pagamento: "cancelado",
+        status_entrega: "falha_entrega",
+        status_fornecedor: "cancelado",
+        detalhes_falha: detalhe,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", pedido.id);
+
+    // Notifica cliente se aplicável
+    const clienteTgId = pedido.cliente?.telegram_id;
+    if (clienteTgId) {
+      try {
+        await this.telegram.sendMessage({
+          chat_id: clienteTgId,
+          text:
+            `⚠️ <b>Atualização do Pedido <code>${pedido.referencia_unica}</code></b>\n\n` +
+            `Seu pedido foi cancelado pelo suporte.\n` +
+            `<b>Motivo:</b> ${detalhe}\n\n` +
+            `Se tiver dúvidas ou pagou via Binance, entre em contato em <b>🗣️ Suporte</b>.`,
+          parse_mode: "HTML",
+        });
+      } catch (tgErr) {
+        console.warn("[OrderService] Erro ao enviar cancelamento no Telegram:", tgErr);
+      }
+    }
+
+    return { success: true, message: "Pedido cancelado com sucesso." };
+  }
+
+  /**
    * Reconcilia pedidos pendentes e consulta status no fornecedor
    */
   async reconcilePendingOrders(): Promise<{

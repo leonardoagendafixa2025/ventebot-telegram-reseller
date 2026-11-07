@@ -268,6 +268,38 @@ export class SyncService {
       }
     }
 
+    // Desativar automaticamente produtos locais que o fornecedor removeu da API
+    if (remoteProducts.length > 0) {
+      try {
+        const remoteIds = remoteProducts.map((p) => p.id);
+        const { data: prodsLocais } = await supabase
+          .from("produtos")
+          .select("id, fornecedor_produto_id")
+          .eq("origem", "ventebot")
+          .eq("ativo", true);
+
+        if (prodsLocais && prodsLocais.length > 0) {
+          const remoteIdSet = new Set(remoteIds);
+          const desativarIds = prodsLocais
+            .filter((p) => p.fornecedor_produto_id && !remoteIdSet.has(p.fornecedor_produto_id))
+            .map((p) => p.id);
+
+          if (desativarIds.length > 0) {
+            await supabase
+              .from("produtos")
+              .update({
+                ativo: false,
+                estoque_qtd: 0,
+                ultima_sincronizacao: new Date().toISOString(),
+              })
+              .in("id", desativarIds);
+          }
+        }
+      } catch (e) {
+        console.warn("[SyncService] Erro ao desativar produtos removidos do fornecedor:", e);
+      }
+    }
+
     // -------------------------------------------------------------------------
     // DISPARO AUTOMÁTICO DE NOTIFICAÇÕES NO GRUPO DE PROMOÇÕES
     // -------------------------------------------------------------------------
